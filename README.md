@@ -1,1 +1,1 @@
-Just checking that GitExt was set up correctly.
+Just checking that GitExt was set up correctly on the tablet.
