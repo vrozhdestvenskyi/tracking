@@ -1,13 +1,22 @@
-BIN_DIR = $$PWD/../bin/
-SRC_DIR = $$PWD/../src/
+CONFIG -= debug_and_release debug_and_release_target
+
+SRC_DIR = $$PWD
+
+BIN_DIR = $$SRC_DIR/../bin
+CONFIG(debug, debug|release) {
+    BIN_DIR = $$BIN_DIR-debug
+} else {
+    BIN_DIR = $$BIN_DIR-release
+}
+
+defineReplace(projectSrcDir) {
+    projectName = $$1
+    return($$SRC_DIR/$$projectName)
+}
 
 defineReplace(projectBinDir) {
     projectName = $$1
-    CONFIG(debug, debug|release) {
-        return($$BIN_DIR/$$projectName/debug/)
-    } else {
-        return($$BIN_DIR/$$projectName/release/)
-    }
+    return($$BIN_DIR/$$projectName)
 }
 
 DESTDIR = $$projectBinDir($$TARGET)

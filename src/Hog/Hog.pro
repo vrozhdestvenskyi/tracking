@@ -18,8 +18,3 @@ HEADERS += \
     piotr_gradientMex.h \
     piotr_sse.hpp \
     piotr_wrappers.hpp
-
-unix {
-    target.path = /usr/lib
-    INSTALLS += target
-}

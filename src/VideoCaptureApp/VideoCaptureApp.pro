@@ -17,9 +17,9 @@ LIBS += \
     -l$$ocvLibName(calib3d)
 
 INCLUDEPATH += \
-    $$SRC_DIR\VideoProcessors \
-    $$SRC_DIR\VideoWidgets \
-    $$SRC_DIR\VideoGui
+    $$SRC_DIR/VideoProcessors \
+    $$SRC_DIR/VideoWidgets \
+    $$SRC_DIR/VideoGui
 
 LIBS += \
     -L$$projectBinDir(VideoProcessors) -lVideoProcessors \

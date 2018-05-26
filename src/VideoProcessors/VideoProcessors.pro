@@ -23,8 +23,3 @@ SOURCES += \
 HEADERS += \
     videoprocessor.h \
     hogprocessor.h
-
-unix {
-    target.path = /usr/lib
-    INSTALLS += target
-}

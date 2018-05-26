@@ -8,13 +8,9 @@ CONFIG += staticlib
 include($$PWD/../tracking.pri)
 
 SOURCES += \
-        videowidget.cpp \
+    videowidget.cpp \
     hogwidget.cpp
 
 HEADERS += \
-        videowidget.h \
+    videowidget.h \
     hogwidget.h
-unix {
-    target.path = /usr/lib
-    INSTALLS += target
-}
