@@ -5,26 +5,13 @@ TEMPLATE = app
 include($$PWD/../tracking.pri)
 include($$PWD/../opencv.pri)
 
-INCLUDEPATH += \
-    $$OCV_ROOT_DIR/include
+INCLUDEPATH += $$OCV_ROOT_DIR/include
+LIBS += $$addLibsOcv(core highgui imgproc features2d calib3d)
 
-LIBS += \
-    -L$$OCV_BIN_DIR \
-    -l$$ocvLibName(core) \
-    -l$$ocvLibName(highgui) \
-    -l$$ocvLibName(imgproc) \
-    -l$$ocvLibName(features2d) \
-    -l$$ocvLibName(calib3d)
-
-INCLUDEPATH += \
-    $$SRC_DIR/VideoProcessors \
-    $$SRC_DIR/VideoWidgets \
-    $$SRC_DIR/VideoGui
-
-LIBS += \
-    -L$$projectBinDir(VideoProcessors) -lVideoProcessors \
-    -L$$projectBinDir(VideoWidgets) -lVideoWidgets \
-    -L$$projectBinDir(VideoGui) -lVideoGui
+DEPENDENCIES = VideoProcessors VideoWidgets VideoGui
+INCLUDEPATH += $$addIncludes($$DEPENDENCIES)
+LIBS += $$addLibs($$DEPENDENCIES)
+PRE_TARGETDEPS += $$addTargetDeps($$DEPENDENCIES)
 
 SOURCES += \
     main.cpp \

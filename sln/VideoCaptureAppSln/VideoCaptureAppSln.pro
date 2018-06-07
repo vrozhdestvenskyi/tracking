@@ -3,18 +3,18 @@ TEMPLATE = subdirs
 
 include($$PWD/../../src/tracking.pri)
 
-SUBDIRS = \
-    VideoWidgets \
-    VideoGui \
+SUBDIRS += \
+    VideoCaptureApp \
     VideoProcessors \
-    VideoCaptureApp
+    VideoWidgets \
+    VideoGui
 
-VideoWidgets.subdir = $$projectSrcDir(VideoWidgets)
-VideoGui.subdir = $$projectSrcDir(VideoGui)
-VideoProcessors.subdir = $$projectSrcDir(VideoProcessors)
-VideoCaptureApp.subdir = $$projectSrcDir(VideoCaptureApp)
+VideoCaptureApp.subdir = $$SRC_DIR/VideoCaptureApp
+VideoProcessors.subdir = $$SRC_DIR/VideoProcessors
+VideoWidgets.subdir = $$SRC_DIR/VideoWidgets
+VideoGui.subdir = $$SRC_DIR/VideoGui
 
 VideoCaptureApp.depends = \
+    VideoProcessors \
     VideoWidgets \
-    VideoGui \
-    VideoProcessors
+    VideoGui

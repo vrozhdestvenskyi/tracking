@@ -9,17 +9,34 @@ CONFIG(debug, debug|release) {
     BIN_DIR = $$BIN_DIR-release
 }
 
-defineReplace(projectSrcDir) {
-    projectName = $$1
-    return($$SRC_DIR/$$projectName)
+defineReplace(addIncludes) {
+    libs = $$1
+    res = ""
+    for(lib, libs) {
+        res = $${res} $${SRC_DIR}/$${lib}
+    }
+    return($$res)
 }
 
-defineReplace(projectBinDir) {
-    projectName = $$1
-    return($$BIN_DIR/$$projectName)
+defineReplace(addLibs) {
+    libs = $$1
+    res = ""
+    for(lib, libs) {
+        res = $${res} -L$${BIN_DIR}/$${lib} -l$${lib}
+    }
+    return($$res)
 }
 
-DESTDIR = $$projectBinDir($$TARGET)
+defineReplace(addTargetDeps) {
+    deps = $$1
+    res = ""
+    for(dep, deps) {
+        res = $${res} $${BIN_DIR}/$${dep}/lib$${dep}.a
+    }
+    return($$res)
+}
+
+DESTDIR = $$BIN_DIR/$$TARGET
 OBJECTS_DIR = $$DESTDIR
 MOC_DIR = $$DESTDIR
 RCC_DIR = $$DESTDIR

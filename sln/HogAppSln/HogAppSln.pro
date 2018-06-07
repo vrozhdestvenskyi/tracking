@@ -3,21 +3,24 @@ TEMPLATE = subdirs
 
 include($$PWD/../../src/tracking.pri)
 
-SUBDIRS = \
-    VideoWidgets \
-    VideoGui \
+SUBDIRS += \
+    HogApp \
     VideoProcessors \
     Hog \
-    HogApp
+    VideoWidgets \
+    VideoGui
 
-VideoWidgets.subdir = $$projectSrcDir(VideoWidgets)
-VideoGui.subdir = $$projectSrcDir(VideoGui)
-VideoProcessors.subdir = $$projectSrcDir(VideoProcessors)
-Hog.subdir = $$projectSrcDir(Hog)
-HogApp.subdir = $$projectSrcDir(HogApp)
+HogApp.subdir = $$SRC_DIR/HogApp
+VideoProcessors.subdir = $$SRC_DIR/VideoProcessors
+Hog.subdir = $$SRC_DIR/Hog
+VideoWidgets.subdir = $$SRC_DIR/VideoWidgets
+VideoGui.subdir = $$SRC_DIR/VideoGui
+
+VideoProcessors.depends = \
+    Hog
 
 HogApp.depends = \
+    VideoProcessors \
     VideoWidgets \
-    VideoGui \
-    Hog \
-    VideoProcessors
+    VideoGui
+
