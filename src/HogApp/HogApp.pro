@@ -8,7 +8,7 @@ include($$PWD/../opencv.pri)
 INCLUDEPATH += $$OCV_ROOT_DIR/include
 LIBS += $$addLibsOcv(core highgui imgproc features2d calib3d)
 
-DEPENDENCIES = VideoProcessors Hog VideoWidgets VideoGui
+DEPENDENCIES = VideoProcessors Hog HogPiotr VideoWidgets VideoGui
 INCLUDEPATH += $$addIncludes($$DEPENDENCIES)
 LIBS += $$addLibs($$DEPENDENCIES)
 PRE_TARGETDEPS += $$addTargetDeps($$DEPENDENCIES)

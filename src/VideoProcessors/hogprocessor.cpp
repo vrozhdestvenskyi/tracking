@@ -3,7 +3,7 @@
 #include <QImage>
 #include <QVector>
 
-#include <piotr_fhog.hpp>
+#include <fhog.hpp>
 
 // debug
 #include <iomanip>

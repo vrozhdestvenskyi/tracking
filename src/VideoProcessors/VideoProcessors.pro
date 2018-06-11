@@ -14,7 +14,8 @@ INCLUDEPATH += \
     $$OCV_ROOT_DIR/include
 
 INCLUDEPATH += \
-    $$SRC_DIR\Hog
+    $$SRC_DIR\Hog \
+    $$SRC_DIR\HogPiotr
 
 SOURCES += \
     videoprocessor.cpp \

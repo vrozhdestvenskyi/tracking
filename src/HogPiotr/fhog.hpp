@@ -4,13 +4,13 @@
 */
 
 
-#ifndef FHOG_HEADER_7813784354687
-#define FHOG_HEADER_7813784354687
+#ifndef FHOG_HPP
+#define FHOG_HPP
 
 #include <vector>
 #include <opencv2/opencv.hpp>
 
-#include "piotr_gradientMex.h"
+#include "gradientMex.h"
 
 
 class FHoG
@@ -108,4 +108,4 @@ public:
     }
 };
 
-#endif //FHOG_HEADER_7813784354687
+#endif // FHOG_HPP

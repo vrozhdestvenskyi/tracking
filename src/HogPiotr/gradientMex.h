@@ -4,10 +4,13 @@
 * Licensed under the Simplified BSD License [see external/bsd.txt]
 *******************************************************************************/
 
-#include "piotr_wrappers.hpp"
+#ifndef GRADIENTMEX_HPP
+#define GRADIENTMEX_HPP
+
+#include "wrappers.hpp"
 #include <math.h>
 #include "string.h"
-#include "piotr_sse.hpp"
+#include "sse.hpp"
 
 //#define PI 3.14159265f
 const float PI = (float)M_PI;
@@ -88,7 +91,7 @@ void gradMag( float *I, float *M, float *O, int h, int w, int d, bool full ) {
     };
     memcpy( M+x*h, M2, h*sizeof(float) );
     // compute and store gradient orientation (O) via table lookup
-    if( O!=0 ) for( y=0; y<h; y++ ) O[x*h+y] = acosf(Gx[y] / 10000.0f); acost[(int)Gx[y]];
+    if( O!=0 ) for( y=0; y<h; y++ ) O[x*h+y] = acosf(Gx[y] / acMult);/// acost[(int)Gx[y]];
     if( O!=0 && full ) {
       y1=((~size_t(O+x*h)+1)&15)/4; y=0;
       for( ; y<y1; y++ ) O[y+x*h]+=(Gy[y]<0)*PI;
@@ -414,3 +417,5 @@ void mexFunction( int nl, mxArray *pl[], int nr, const mxArray *pr[] ) {
   else mexErrMsgTxt("Invalid action.");
 }
 #endif
+
+#endif // GRADIENTMEX_HPP

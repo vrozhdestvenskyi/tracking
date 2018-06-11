@@ -3,8 +3,10 @@
 * Copyright 2014 Piotr Dollar.  [pdollar-at-gmail.com]
 * Licensed under the Simplified BSD License [see external/bsd.txt]
 *******************************************************************************/
-#ifndef _WRAPPERS_HPP_
-#define _WRAPPERS_HPP_
+
+#ifndef WRAPPERS_HPP
+#define WRAPPERS_HPP
+
 #ifdef MATLAB_MEX_FILE
 
 // wrapper functions if compiling from Matlab
@@ -40,4 +42,4 @@ void alFree(void* aligned) {
   wrFree(raw);
 }
 
-#endif
+#endif // WRAPPERS_HPP
