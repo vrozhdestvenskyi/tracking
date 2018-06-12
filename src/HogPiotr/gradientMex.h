@@ -62,7 +62,7 @@ float* acosTable() {
 // compute gradient magnitude and orientation at each location (uses sse)
 void gradMag( float *I, float *M, float *O, int h, int w, int d, bool full ) {
   int x, y, y1, c, h4, s; float *Gx, *Gy, *M2; __m128 *_Gx, *_Gy, *_M2, _m;
-  float *acost = acosTable(), acMult=10000.0f;
+  float /**acost = acosTable(), */acMult=10000.0f;
   // allocate memory for storing one column of output (padded so h4%4==0)
   h4=(h%4==0) ? h : h-(h%4)+4; s=d*h4*sizeof(float);
   M2=(float*) alMalloc(s,16); _M2=(__m128*) M2;

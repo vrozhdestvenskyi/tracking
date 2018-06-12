@@ -5,6 +5,11 @@ TEMPLATE = app
 include($$PWD/../tracking.pri)
 include($$PWD/../opencv.pri)
 
+# For Piotr's HOG implementation
+CONFIG += mmx sse sse2
+QMAKE_FLAGS += -msse4.1 -mssse3 -msse3 -msse2 -msse
+QMAKE_CXXFLAGS += -msse4.1 -mssse3 -msse3 -msse2 -msse
+
 INCLUDEPATH += $$OCV_ROOT_DIR/include
 LIBS += $$addLibsOcv(core highgui imgproc features2d calib3d)
 
@@ -15,10 +20,12 @@ PRE_TARGETDEPS += $$addTargetDeps($$DEPENDENCIES)
 
 SOURCES += \
     main.cpp \
-    hogmainwin.cpp
+    hogmainwin.cpp \
+    hogprocessor.cpp
 
 HEADERS += \
-    hogmainwin.h
+    hogmainwin.h \
+    hogprocessor.h
 
 FORMS += \
     hogmainwin.ui

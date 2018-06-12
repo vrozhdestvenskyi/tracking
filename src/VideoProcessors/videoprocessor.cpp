@@ -1,8 +1,6 @@
 #include <QImage>
 #include <QMetaMethod>
-#include <opencv2/core/core.hpp>
-#include <opencv2/highgui/highgui.hpp>
-#include <opencv2/imgproc/imgproc.hpp>
+#include <QImageReader>
 #include <videoprocessor.h>
 
 VideoProcessor::VideoProcessor(QObject *parent)
@@ -40,10 +38,8 @@ void VideoProcessor::setupProcessor(const VideoProcessor::CaptureSettings &setti
     std::fill(rgbFrame_, rgbFrame_ + dataLength, 0);
     frameIndex_ = 0;
     setVideoCaptureState(CaptureState::Paused);
-    QImage qimage(
-        rgbFrame_, settings.frameWidth_, settings.frameHeight_, settings.frameWidth_ * 3,
-        QImage::Format_RGB888
-    );
+    QImage qimage(rgbFrame_, settings.frameWidth_, settings.frameHeight_,
+        settings.frameWidth_ * 3, QImage::Format_RGB888);
     emit sendFrame(qimage.copy());
 }
 
@@ -54,10 +50,8 @@ void VideoProcessor::processFrame()
     {
         qDebug("Failed to capture %d-th frame", frameIndex_);
     }
-    QImage qimage(
-        rgbFrame_, captureSettings_.frameWidth_, captureSettings_.frameHeight_,
-        captureSettings_.frameWidth_ * 3, QImage::Format_RGB888
-    );
+    QImage qimage(rgbFrame_, captureSettings_.frameWidth_, captureSettings_.frameHeight_,
+        captureSettings_.frameWidth_ * 3, QImage::Format_RGB888);
     emit sendFrame(qimage.copy());
 }
 
@@ -100,23 +94,20 @@ bool VideoProcessor::captureFrameFromDir()
         setVideoCaptureState(CaptureState::NotInitialized);
         return false;
     }
-
     std::string frameNumber = std::to_string(settings.firstFrame_ + frameIndex_++);
     std::string leadingZeros(settings.digitCount_ - (int)frameNumber.length(), '0');
     std::string framePath = settings.directory_ + leadingZeros + frameNumber + settings.extension_;
-    cv::Mat ocvFrame = cv::imread(framePath.data(), CV_LOAD_IMAGE_COLOR);
-    if (ocvFrame.cols != captureSettings_.frameWidth_ ||
-        ocvFrame.rows != captureSettings_.frameHeight_)
+    QImage qimage = std::move(
+        QImage(QString(framePath.c_str())).convertToFormat(QImage::Format_RGB888));
+    if (qimage.width() != captureSettings_.frameWidth_ ||
+        qimage.height() != captureSettings_.frameHeight_ ||
+        qimage.bytesPerLine() != captureSettings_.frameWidth_ * 3 ||
+        qimage.format() != QImage::Format_RGB888)
     {
-        throw std::runtime_error("Invalid size of captured image");
+        throw std::runtime_error("Unexpected format of captured frame");
     }
-    cv::cvtColor(ocvFrame, ocvFrame, CV_BGR2RGB);
-
-    if ((int)ocvFrame.step[0] != captureSettings_.frameWidth_ * 3)
-    {
-        throw std::runtime_error("Image stride in video capture is not implemented yet");
-    }
-    int frameSize = ocvFrame.rows * ocvFrame.cols * 3 * sizeof(uchar);
-    std::copy(ocvFrame.data, ocvFrame.data + frameSize, rgbFrame_);
+    int frameSize = qimage.bytesPerLine() * qimage.height() * sizeof(uchar);
+    std::copy(qimage.constBits(), qimage.constBits() + frameSize, rgbFrame_);
     return true;
 }
+
