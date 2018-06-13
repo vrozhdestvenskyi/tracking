@@ -1,15 +1,16 @@
+#include <videoprocessor.h>
 #include <QImage>
 #include <QMetaMethod>
 #include <QImageReader>
-#include <videoprocessor.h>
+#include <oclprocessor.h>
 
 VideoProcessor::VideoProcessor(QObject *parent)
     : QObject(parent)
-    , rgbFrame_(nullptr)
-    , frameIndex_(0)
     , captureTimer_(this)
 {
     connect(&captureTimer_, SIGNAL(timeout()), this, SLOT(processFrame()));
+    OclProcessor oclProcessor;
+    (void)oclProcessor;
 }
 
 VideoProcessor::~VideoProcessor()

@@ -37,7 +37,6 @@ public:
         VideoDirectorySettings videoDirSettings_;
     };
 
-public:
     VideoProcessor(QObject *parent = nullptr);
     virtual ~VideoProcessor();
 
@@ -54,7 +53,6 @@ protected:
     bool captureFrame();
     bool captureFrameFromDir();
 
-protected:
     CaptureSettings captureSettings_;
     uchar *rgbFrame_ = nullptr;
     int frameIndex_ = 0;

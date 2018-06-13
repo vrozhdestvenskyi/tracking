@@ -4,8 +4,13 @@ CONFIG += staticlib
 
 include($$PWD/../tracking.pri)
 
+# OpenCL
+INCLUDEPATH += "C:\Intel\OpenCL\sdk\include"
+
 SOURCES += \
-    videoprocessor.cpp
+    videoprocessor.cpp \
+    oclprocessor.cpp
 
 HEADERS += \
-    videoprocessor.h
+    videoprocessor.h \
+    oclprocessor.h
