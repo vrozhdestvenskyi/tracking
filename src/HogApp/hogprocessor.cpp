@@ -22,7 +22,7 @@ HogProcessor::~HogProcessor()
 
 void HogProcessor::release()
 {
-    releaseHogHandle(hogHandle_);
+    hogProto_.release();
     if (hogPiotr_)
     {
         delete [] hogPiotr_;
@@ -38,7 +38,6 @@ void HogProcessor::setupProcessor(const VideoProcessor::CaptureSettings &setting
     hogSettings.cellSize_ = 4;
     hogSettings.insensitiveBinCount_ = 9;
     hogSettings.truncation_ = 0.2f;
-
     if (settings.frameWidth_ % hogSettings.cellSize_ ||
         settings.frameHeight_ % hogSettings.cellSize_)
     {
@@ -46,8 +45,7 @@ void HogProcessor::setupProcessor(const VideoProcessor::CaptureSettings &setting
     }
     hogSettings.cellCount_[0] = settings.frameWidth_ / hogSettings.cellSize_;
     hogSettings.cellCount_[1] = settings.frameHeight_ / hogSettings.cellSize_;
-
-    initializeHogHandle(hogSettings, hogHandle_);
+    hogProto_.initialize(hogSettings);
 
     int cellCount = hogSettings.cellCount_[0] * hogSettings.cellCount_[1];
     int length = cellCount * hogSettings.channelsPerFeature();
@@ -65,9 +63,7 @@ void HogProcessor::setupProcessor(const VideoProcessor::CaptureSettings &setting
 
 void HogProcessor::calculateHogPiotr()
 {
-    cv::Mat ocvImage(
-        captureSettings_.frameHeight_, captureSettings_.frameWidth_, CV_8UC3, rgbFrame_
-    );
+    cv::Mat ocvImage(captureSettings_.frameHeight_, captureSettings_.frameWidth_, CV_8UC3, rgbFrame_);
     cv::cvtColor(ocvImage, *ocvImageGray_, CV_RGB2GRAY);
     ocvImageGray_->convertTo(*ocvImageGrayFloat_, CV_32FC1);
 
@@ -84,11 +80,10 @@ void HogProcessor::calculateHogPiotr()
     }
 //    std::cout << "pixelMax = " << pixelMax << "   pixelMin = " << pixelMin << "\n";
 
-    const HogSettings &hogSettings = hogHandle_.settings_;
+    const HogSettings &hogSettings = hogProto_.settings_;
     std::vector<cv::Mat> hogPiotr = FHoG::extract(
         *ocvImageGrayFloat_, 2, hogSettings.cellSize_, hogSettings.insensitiveBinCount_,
-        1, hogSettings.truncation_
-    );
+        1, hogSettings.truncation_);
     for (int c = 0; c < hogSettings.channelsPerFeature(); ++c)
     {
         // debug
@@ -108,7 +103,7 @@ void HogProcessor::calculateHogPiotr()
 
                 // debug
 //                float v = hogPiotr_[featureIndex * hogSettings.channelsPerFeature() + c];
-                float v = hogHandle_.featureDescriptor_[featureIndex * hogSettings.channelsPerFeature() + c];
+                float v = hogProto_.featureDescriptor_[featureIndex * hogSettings.channelsPerFeature() + c];
                 channelMax = std::max<float>(channelMax, v);
                 channelMin = std::min<float>(channelMin, v);
                 channelSum += v;
@@ -127,7 +122,7 @@ void HogProcessor::calculateHogPiotr()
 
 void HogProcessor::compareDescriptors() const
 {
-    const HogSettings &hogSettings = hogHandle_.settings_;
+    const HogSettings &hogSettings = hogProto_.settings_;
     int cellCount[2] = { hogSettings.cellCount_[0], hogSettings.cellCount_[1] };
     int cellCountTotal = cellCount[0] * cellCount[1];
     int channelsPerFeature = hogSettings.channelsPerFeature();
@@ -148,7 +143,7 @@ void HogProcessor::compareDescriptors() const
             }
 
             int channelIndex = c * channelsPerFeature + b;
-            float ours = hogHandle_.featureDescriptor_[channelIndex];
+            float ours = hogProto_.featureDescriptor_[channelIndex];
             float gt = hogPiotr_[channelIndex];
             float delta = gt - ours;
             if (fabsf(delta) > gt * 0.05f)
@@ -174,20 +169,19 @@ void HogProcessor::processFrame()
     }
 
     calculateHogPiotr();
-    calculateHog(ocvImageGray_->data, hogHandle_);
+    hogProto_.calculate(ocvImageGray_->data);
     compareDescriptors();
 
-    QImage qimage(
-        rgbFrame_, captureSettings_.frameWidth_, captureSettings_.frameHeight_,
-        captureSettings_.frameWidth_ * 3, QImage::Format_RGB888
-    );
+    QImage qimage(rgbFrame_, captureSettings_.frameWidth_, captureSettings_.frameHeight_,
+        captureSettings_.frameWidth_ * 3, QImage::Format_RGB888);
     emit sendFrame(qimage.copy());
 
-    const HogSettings &hogSettings = hogHandle_.settings_;
+    const HogSettings &hogSettings = hogProto_.settings_;
     QVector<float> hogContainer(
-        hogSettings.cellCount_[0] * hogSettings.cellCount_[1] * hogSettings.channelsPerFeature()
-    );
+        hogSettings.cellCount_[0] * hogSettings.cellCount_[1] * hogSettings.channelsPerFeature());
 //    qCopy(hogPiotr_, hogPiotr_ + hogContainer.size(), hogContainer.begin());
-    qCopy(hogHandle_.featureDescriptor_, hogHandle_.featureDescriptor_ + hogContainer.size(), hogContainer.begin());
+    qCopy(hogProto_.featureDescriptor_, hogProto_.featureDescriptor_ + hogContainer.size(),
+        hogContainer.begin());
     emit sendHog(hogContainer);
 }
+

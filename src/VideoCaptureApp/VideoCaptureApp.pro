@@ -3,10 +3,10 @@ TARGET = VideoCaptureApp
 TEMPLATE = app
 
 include($$PWD/../tracking.pri)
+include($$PWD/../opencl.pri)
 
-# OpenCL
-INCLUDEPATH += "C:/Intel/OpenCL/sdk/include"
-LIBS += -L"C:/Intel/OpenCL/sdk/bin/icd/x86" -lOpenCL
+INCLUDEPATH += $$OCL_INCLUDE_DIR
+LIBS += $$OCL_LIB
 
 DEPENDENCIES = VideoProcessors VideoWidgets VideoGui
 INCLUDEPATH += $$addIncludes($$DEPENDENCIES)

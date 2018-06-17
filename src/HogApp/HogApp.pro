@@ -3,7 +3,11 @@ TARGET = HogApp
 TEMPLATE = app
 
 include($$PWD/../tracking.pri)
+include($$PWD/../opencl.pri)
 include($$PWD/../opencv.pri)
+
+INCLUDEPATH += OCL_INCLUDE_DIR
+LIBS += $$OCL_LIB
 
 # For Piotr's HOG implementation
 CONFIG += mmx sse sse2

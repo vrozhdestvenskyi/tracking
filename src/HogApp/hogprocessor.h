@@ -2,7 +2,7 @@
 #define HOGPROCESSOR_H
 
 #include <memory>
-#include <hog.h>
+#include <hogproto.h>
 #include <videoprocessor.h>
 
 namespace cv
@@ -17,11 +17,11 @@ class HogProcessor : public VideoProcessor
 
 public:
     HogProcessor(QObject *parent = nullptr);
-    virtual ~HogProcessor();
+    ~HogProcessor() override;
 
 public slots:
-    virtual void processFrame() override;
-    virtual void setupProcessor(const VideoProcessor::CaptureSettings &settings) override;
+    void processFrame() override;
+    void setupProcessor(const VideoProcessor::CaptureSettings &settings) override;
 
 signals:
     void sendHog(const QVector<float> &hog);
@@ -32,11 +32,10 @@ protected:
     void calculateHogPiotr();
     void compareDescriptors() const;
 
-protected:
     std::shared_ptr<cv::Mat_<uchar> > ocvImageGray_ = nullptr;
     std::shared_ptr<cv::Mat_<float> > ocvImageGrayFloat_ = nullptr;
     float *hogPiotr_ = nullptr;
-    HogHandle hogHandle_;
+    HogProto hogProto_;
 };
 
 #endif // HOGPROCESSOR_H

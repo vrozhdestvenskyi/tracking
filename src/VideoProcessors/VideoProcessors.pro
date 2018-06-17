@@ -3,9 +3,9 @@ TEMPLATE = lib
 CONFIG += staticlib
 
 include($$PWD/../tracking.pri)
+include($$PWD/../opencl.pri)
 
-# OpenCL
-INCLUDEPATH += "C:\Intel\OpenCL\sdk\include"
+INCLUDEPATH += $$OCL_INCLUDE_DIR
 
 SOURCES += \
     videoprocessor.cpp \
