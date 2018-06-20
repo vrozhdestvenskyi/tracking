@@ -3,17 +3,19 @@
 
 typedef unsigned char uchar;
 
-// TODO: update HogWidget by insensitiveBinCount_; use these settings in Piotr's method
+// TODO: use these settings in Piotr's method.
 struct HogSettings
 {
     int sensitiveBinCount() const { return insensitiveBinCount_ * 2; }
     int channelsPerCell() const { return insensitiveBinCount_ + sensitiveBinCount(); }
     int channelsPerFeature() const { return channelsPerCell() + 4; }
 
-    int insensitiveBinCount_ = 0; // 9
-    int cellSize_ = 0; // 4
+    // TODO: create a separate structure HogParameters
+    int insensitiveBinCount_ = 9;
+    int cellSize_ = 4;
+    float truncation_ = 0.2f;
+
     int cellCount_[2] = { 0, 0 };
-    float truncation_ = 0.0f; // 0.2f
 };
 
 class HogProto

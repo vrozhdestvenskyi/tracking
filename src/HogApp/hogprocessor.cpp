@@ -33,15 +33,15 @@ void HogProcessor::release()
 void HogProcessor::setupProcessor(const VideoProcessor::CaptureSettings &settings)
 {
     release();
+    VideoProcessor::setupProcessor(settings);
 
     HogSettings hogSettings;
-    hogSettings.cellSize_ = 4;
-    hogSettings.insensitiveBinCount_ = 9;
-    hogSettings.truncation_ = 0.2f;
     if (settings.frameWidth_ % hogSettings.cellSize_ ||
         settings.frameHeight_ % hogSettings.cellSize_)
     {
-        throw std::runtime_error("Image resolution is not a multiple of HOG cell size");
+        setVideoCaptureState(CaptureState::NotInitialized);
+        emit sendError("Image resolution is not a multiple of HOG cell size");
+        return;
     }
     hogSettings.cellCount_[0] = settings.frameWidth_ / hogSettings.cellSize_;
     hogSettings.cellCount_[1] = settings.frameHeight_ / hogSettings.cellSize_;
@@ -51,8 +51,6 @@ void HogProcessor::setupProcessor(const VideoProcessor::CaptureSettings &setting
     int length = cellCount * hogSettings.channelsPerFeature();
     hogPiotr_ = new float [length];
     std::fill(hogPiotr_, hogPiotr_ + length, 0.0f);
-
-    VideoProcessor::setupProcessor(settings);
 
     emit sendHogSettings(
         hogSettings.cellCount_[0], hogSettings.cellCount_[1], hogSettings.channelsPerFeature(),

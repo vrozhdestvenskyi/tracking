@@ -18,9 +18,11 @@ VideoProcessors.subdir = $$SRC_DIR/VideoProcessors
 VideoWidgets.subdir = $$SRC_DIR/VideoWidgets
 VideoGui.subdir = $$SRC_DIR/VideoGui
 
+VideoGui.depends = \
+    VideoProcessors
+
 HogApp.depends = \
     Hog \
     HogPiotr \
-    VideoProcessors \
-    VideoWidgets \
-    VideoGui
+    VideoGui \
+    VideoWidgets

@@ -38,10 +38,10 @@ __kernel void calculatePartialDerivatives(
     {
         barrier(CLK_LOCAL_MEM_FENCE);
 
-        derivativesX[xGlobal + yGlobal * widthGlobal] = 0.5 * (
+        derivativesX[xGlobal + yGlobal * widthGlobal] = 0.5f * (
             imageLocal[xLocal + 1 + yLocal * widthLocal] -
             imageLocal[xLocal - 1 + yLocal * widthLocal]);
-        derivativesY[xGlobal + yGlobal * widthGlobal] = 0.5 * (
+        derivativesY[xGlobal + yGlobal * widthGlobal] = 0.5f * (
             imageLocal[xLocal + (yLocal + 1) * widthLocal] -
             imageLocal[xLocal + (yLocal - 1) * widthLocal]);
 
@@ -73,10 +73,10 @@ __kernel void calculatePartialDerivatives(
 
     barrier(CLK_LOCAL_MEM_FENCE);
 
-    derivativesX[xGlobal + yGlobal * widthGlobal] = 0.5 * (
+    derivativesX[xGlobal + yGlobal * widthGlobal] = 0.5f * (
         imageLocal[xLocal + 1 + yLocal * widthLocal] -
         imageLocal[xLocal - 1 + yLocal * widthLocal]);
-    derivativesY[xGlobal + yGlobal * widthGlobal] = 0.5 * (
+    derivativesY[xGlobal + yGlobal * widthGlobal] = 0.5f * (
         imageLocal[xLocal + (yLocal + 1) * widthLocal] -
         imageLocal[xLocal + (yLocal - 1) * widthLocal]);
 }

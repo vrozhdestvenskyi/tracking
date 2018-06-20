@@ -1,15 +1,16 @@
 #ifndef HOG_H
 #define HOG_H
 
+#include <CL/cl.h>
 #include <hogproto.h>
 
 class Hog
 {
 public:
     ~Hog();
-    void initialize(const HogSettings &settings);
+    cl_int initialize(const HogSettings &settings);
     void release();
-    void calculate(const uchar *image);
+    cl_int calculate(const uchar *image);
 
     HogSettings settings_;
 };

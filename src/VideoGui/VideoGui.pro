@@ -5,9 +5,10 @@ TEMPLATE = lib
 CONFIG += staticlib
 
 include($$PWD/../tracking.pri)
+include($$PWD/../opencl.pri)
 
-INCLUDEPATH += \
-    $$SRC_DIR/VideoProcessors
+INCLUDEPATH += $$OCL_INCLUDE_DIR
+INCLUDEPATH += $$addIncludes(VideoProcessors)
 
 SOURCES += \
     videocapturebase.cpp

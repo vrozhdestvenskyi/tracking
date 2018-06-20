@@ -14,7 +14,9 @@ VideoProcessors.subdir = $$SRC_DIR/VideoProcessors
 VideoWidgets.subdir = $$SRC_DIR/VideoWidgets
 VideoGui.subdir = $$SRC_DIR/VideoGui
 
+VideoGui.depends = \
+    VideoProcessors
+
 VideoCaptureApp.depends = \
-    VideoProcessors \
     VideoWidgets \
     VideoGui

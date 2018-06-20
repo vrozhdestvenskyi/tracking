@@ -7,10 +7,12 @@
 class OclProcessor
 {
 public:
-    OclProcessor();
     ~OclProcessor();
 
 protected:
+    cl_int initialize();
+    void release();
+
     cl_int getPlatformId(cl_platform_id &platformId) const;
     cl_int getDeviceId(
         const cl_platform_id &platformId,

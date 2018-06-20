@@ -2,32 +2,34 @@
 #include <array>
 #include <QDebug>
 
-OclProcessor::OclProcessor()
+OclProcessor::~OclProcessor()
 {
-    cl_platform_id platformId;
-    if (getPlatformId(platformId) != CL_SUCCESS)
-    {
-        throw std::runtime_error("Failed to initialize cl_platform_id");
-    }
-    cl_device_id deviceId;
-    if (getDeviceId(platformId, CL_DEVICE_TYPE_GPU, deviceId) != CL_SUCCESS)
-    {
-        throw std::runtime_error("Failed to initialize cl_device_id");
-    }
-    oclContext_ = clCreateContext(NULL, 1, &deviceId, NULL, NULL, NULL);
-    if (!oclContext_)
-    {
-        throw std::runtime_error("Failed to initialize cl_context");
-    }
-    oclQueue_ = clCreateCommandQueue(oclContext_, deviceId,
-        CL_QUEUE_OUT_OF_ORDER_EXEC_MODE_ENABLE, NULL);
-    if (!oclQueue_)
-    {
-        throw std::runtime_error("Failed to initialize cl_command_queue");
-    }
+    release();
 }
 
-OclProcessor::~OclProcessor()
+cl_int OclProcessor::initialize()
+{
+    cl_platform_id platformId;
+    cl_device_id deviceId;
+    if (getPlatformId(platformId) == CL_SUCCESS &&
+        getDeviceId(platformId, CL_DEVICE_TYPE_GPU, deviceId) == CL_SUCCESS)
+    {
+        oclContext_ = clCreateContext(NULL, 1, &deviceId, NULL, NULL, NULL);
+    }
+    if (oclContext_)
+    {
+        oclQueue_ = clCreateCommandQueue(oclContext_, deviceId,
+            CL_QUEUE_OUT_OF_ORDER_EXEC_MODE_ENABLE, NULL);
+    }
+    if (!oclQueue_)
+    {
+        release();
+        return CL_INVALID_COMMAND_QUEUE;
+    }
+    return CL_SUCCESS;
+}
+
+void OclProcessor::release()
 {
     if (oclQueue_)
     {
@@ -45,18 +47,20 @@ cl_int OclProcessor::getPlatformId(cl_platform_id &platformId) const
 {
     cl_uint idsCount = 0;
     std::array<cl_platform_id, 4> ids;
-    if (clGetPlatformIDs(ids.size(), ids.data(), &idsCount) != CL_SUCCESS)
+    cl_int status = clGetPlatformIDs(ids.size(), ids.data(), &idsCount);
+    if (status != CL_SUCCESS)
     {
-        throw std::runtime_error("Failed to get platform ids");
+        return status;
     }
     for (cl_uint i = 0; i < idsCount; ++i)
     {
         std::array<cl_char, 256> info;
         size_t infoLength = 0;
-        if (clGetPlatformInfo(ids[i], CL_PLATFORM_VERSION, info.size(),
-                (void*)info.data(), &infoLength) != CL_SUCCESS)
+        status = clGetPlatformInfo(ids[i], CL_PLATFORM_VERSION, info.size(),
+            (void*)info.data(), &infoLength);
+        if (status != CL_SUCCESS)
         {
-            throw std::runtime_error("Failed to get platform info");
+            return status;
         }
         if (infoLength == 12 && std::string(info.data(), info.data() + 11) == "OpenCL 1.2 ")
         {
@@ -75,19 +79,21 @@ cl_int OclProcessor::getDeviceId(
 {
     cl_uint idsCount = 0;
     std::array<cl_device_id, 8> ids;
-    if (clGetDeviceIDs(platformId, deviceType, ids.size(), ids.data(), &idsCount) != CL_SUCCESS)
+    cl_int status = clGetDeviceIDs(platformId, deviceType, ids.size(), ids.data(), &idsCount);
+    if (status != CL_SUCCESS)
     {
-        throw std::runtime_error("Failed to get device ids");
+        return status;
     }
     if (idsCount > 0)
     {
         deviceId = ids[0];
         std::array<cl_char, 256> info;
         size_t infoLength = 0;
-        if (clGetDeviceInfo(deviceId, CL_DEVICE_NAME, info.size(),
-                (void*)info.data(), &infoLength) != CL_SUCCESS)
+        status = clGetDeviceInfo(deviceId, CL_DEVICE_NAME, info.size(),
+            (void*)info.data(), &infoLength);
+        if (status != CL_SUCCESS)
         {
-            throw std::runtime_error("Failed to get device info");
+            return status;
         }
         qDebug("Use computation device: %s", info.data());
         return CL_SUCCESS;

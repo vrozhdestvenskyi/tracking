@@ -6,7 +6,7 @@ include($$PWD/../tracking.pri)
 include($$PWD/../opencl.pri)
 include($$PWD/../opencv.pri)
 
-INCLUDEPATH += OCL_INCLUDE_DIR
+INCLUDEPATH += $$OCL_INCLUDE_DIR
 LIBS += $$OCL_LIB
 
 # For Piotr's HOG implementation

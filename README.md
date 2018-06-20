@@ -3,4 +3,4 @@ Also this code uses OpenCL 1.2.
 
 To compile any application in QtCreator, please import a corresponding subdirs-project from ./sln subdirectory. Please note that directory with binaries is specified in ./src/tracking.pri file, so there is no need to use Shadow build.
 
-For algorithms testing, the data from VOT2016 dataset is used. It can be downloaded here: http://www.votchallenge.net/vot2016/dataset.html
+For algorithms testing, the VOT2016 database is used. It can be downloaded here: http://www.votchallenge.net/vot2016/dataset.html

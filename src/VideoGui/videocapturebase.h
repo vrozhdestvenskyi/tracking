@@ -15,9 +15,11 @@ public:
 protected:
     VideoCaptureBase(QWidget *parent = nullptr);
     void connectBaseControls(
-        const QPushButton *openDirBtn, const VideoProcessor *videoProcessor) const;
+        const QPushButton *openDirBtn,
+        const VideoProcessor *videoProcessor) const;
 
 protected slots:
+    void receiveError(const QString &what);
     void openDirPressed();
     void playPausePressed();
     void setVideoCaptureState(VideoProcessor::CaptureState state);
@@ -29,7 +31,6 @@ signals:
 protected:
     bool setupVideoDir(const QString &directory, VideoProcessor::CaptureSettings &settings) const;
 
-protected:
     const QString videoSourceSettingsPath_ = "videoSourceSettings.ini";
     const QStringList imageExtensions_ = { "jpg", "JPG" };
     const QString btnTextPaused_ = "Paused";

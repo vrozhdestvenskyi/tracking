@@ -2,8 +2,9 @@
 #define VIDEOPROCESSOR_H
 
 #include <QTimer>
+#include <oclprocessor.h>
 
-class VideoProcessor : public QObject
+class VideoProcessor : public QObject, public OclProcessor
 {
     Q_OBJECT
 
@@ -43,13 +44,15 @@ public:
 public slots:
     virtual void setupProcessor(const VideoProcessor::CaptureSettings &settings);
     virtual void processFrame();
-    virtual void setVideoCaptureState(VideoProcessor::CaptureState state);
+    void setVideoCaptureState(VideoProcessor::CaptureState state);
 
 signals:
+    void sendError(const QString &what);
     void sendVideoCaptureState(VideoProcessor::CaptureState state);
     void sendFrame(const QImage &image);
 
 protected:
+    void release();
     bool captureFrame();
     bool captureFrameFromDir();
 

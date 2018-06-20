@@ -2,37 +2,45 @@
 #include <QImage>
 #include <QMetaMethod>
 #include <QImageReader>
-#include <oclprocessor.h>
 
 VideoProcessor::VideoProcessor(QObject *parent)
     : QObject(parent)
+    , OclProcessor()
     , captureTimer_(this)
 {
     connect(&captureTimer_, SIGNAL(timeout()), this, SLOT(processFrame()));
-    OclProcessor oclProcessor;
-    (void)oclProcessor;
+}
+
+void VideoProcessor::release()
+{
+    if (rgbFrame_)
+    {
+        delete [] rgbFrame_;
+        rgbFrame_ = nullptr;
+    }
+    OclProcessor::release();
 }
 
 VideoProcessor::~VideoProcessor()
 {
-    if (rgbFrame_)
-    {
-        delete [] rgbFrame_;
-        rgbFrame_ = nullptr;
-    }
+    release();
 }
 
 void VideoProcessor::setupProcessor(const VideoProcessor::CaptureSettings &settings)
 {
+    release();
+    if (OclProcessor::initialize() != CL_SUCCESS)
+    {
+        setVideoCaptureState(CaptureState::NotInitialized);
+        emit sendError("OclProcessor::initialize() was failed");
+        return;
+    }
     captureSettings_ = settings;
     if (settings.frameWidth_ <= 0 || settings.frameHeight_ <= 0)
     {
-        throw std::runtime_error("Invalid frame size received");
-    }
-    if (rgbFrame_)
-    {
-        delete [] rgbFrame_;
-        rgbFrame_ = nullptr;
+        setVideoCaptureState(CaptureState::NotInitialized);
+        emit sendError("VideoProcessor::setupProcessor() received invalid frame size");
+        return;
     }
     int dataLength = settings.frameWidth_ * settings.frameHeight_ * 3 * sizeof(uchar);
     rgbFrame_ = new uchar [dataLength];
@@ -70,7 +78,7 @@ void VideoProcessor::setVideoCaptureState(VideoProcessor::CaptureState state)
         captureTimer_.start(40);
         break;
     default:
-        throw std::runtime_error("Invalid video capture mode");
+        throw std::runtime_error("VideoProcessor::setVideoCaptureState(...): invalid state");
     }
     emit sendVideoCaptureState(state);
 }
@@ -82,8 +90,9 @@ bool VideoProcessor::captureFrame()
     case CaptureMode::FromDirectory:
         return captureFrameFromDir();
     default:
-        throw std::runtime_error("Invalid video capture mode");
+        throw std::runtime_error("VideoProcessor::captureFrame(): invalid video capture mode");
     }
+    return false;
 }
 
 bool VideoProcessor::captureFrameFromDir()
@@ -105,7 +114,10 @@ bool VideoProcessor::captureFrameFromDir()
         qimage.bytesPerLine() != captureSettings_.frameWidth_ * 3 ||
         qimage.format() != QImage::Format_RGB888)
     {
-        throw std::runtime_error("Unexpected format of captured frame");
+        setVideoCaptureState(CaptureState::NotInitialized);
+        emit sendError("VideoProcessor::captureFrameFromDir(...): encountered an "
+            "unexpected format of the captured frame");
+        return false;
     }
     int frameSize = qimage.bytesPerLine() * qimage.height() * sizeof(uchar);
     std::copy(qimage.constBits(), qimage.constBits() + frameSize, rgbFrame_);

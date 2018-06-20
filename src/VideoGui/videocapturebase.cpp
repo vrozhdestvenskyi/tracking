@@ -1,6 +1,7 @@
+#include <videocapturebase.h>
 #include <QSettings>
 #include <QFileDialog>
-#include <videocapturebase.h>
+#include <QErrorMessage>
 
 VideoCaptureBase::VideoCaptureBase(QWidget *parent)
     : QMainWindow(parent)
@@ -25,6 +26,14 @@ void VideoCaptureBase::connectBaseControls(
             videoProcessor, SLOT(setVideoCaptureState(VideoProcessor::CaptureState)));
     connect(videoProcessor, SIGNAL(sendVideoCaptureState(VideoProcessor::CaptureState)),
             this, SLOT(setVideoCaptureState(VideoProcessor::CaptureState)));
+    connect(videoProcessor, SIGNAL(sendError(QString)), this, SLOT(receiveError(QString)));
+}
+
+void VideoCaptureBase::receiveError(const QString &what)
+{
+    QErrorMessage messageBox(this);
+    messageBox.showMessage(what);
+    messageBox.exec();
 }
 
 void VideoCaptureBase::openDirPressed()
@@ -33,8 +42,7 @@ void VideoCaptureBase::openDirPressed()
     QString directory = settings.value("directory", QString()).toString();
 
     directory = QFileDialog::getExistingDirectory(
-        this, "Open directory with image sequence", directory, QFileDialog::ShowDirsOnly
-    );
+        this, "Open directory with image sequence", directory, QFileDialog::ShowDirsOnly);
     if (!directory.length())
     {
         qDebug("Empty directory received!");
@@ -96,6 +104,8 @@ void VideoCaptureBase::setVideoCaptureState(VideoProcessor::CaptureState state)
         playPauseBtn_->setEnabled(true);
         playPauseBtn_->setText(btnTextCapturing_);
         break;
+    default:
+        throw std::runtime_error("Invalid video capture state");
     }
 }
 
