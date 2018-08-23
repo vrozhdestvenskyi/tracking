@@ -21,16 +21,30 @@ cl_int OclProcessor::initialize()
         oclQueue_ = clCreateCommandQueue(oclContext_, deviceId,
             CL_QUEUE_OUT_OF_ORDER_EXEC_MODE_ENABLE, NULL);
     }
-    if (!oclQueue_)
+    if (oclQueue_)
+    {
+        std::string kernelSource = std::move(getKernelSource());
+        const char *kernelSourceStr = kernelSource.c_str();
+        oclProgram_ = clCreateProgramWithSource(oclContext_, 1, &kernelSourceStr, NULL, NULL);
+    }
+    // TODO: investigate different optimization flags in khronos-opencl-1.1
+    // in section 5.6.3
+    if (!oclProgram_ ||
+        clBuildProgram(oclProgram_, 1, &deviceId, "-cl-std=CL1.2", NULL, NULL) != CL_SUCCESS)
     {
         release();
-        return CL_INVALID_COMMAND_QUEUE;
+        return CL_BUILD_PROGRAM_FAILURE;
     }
     return CL_SUCCESS;
 }
 
 void OclProcessor::release()
 {
+    if (oclProgram_)
+    {
+        clReleaseProgram(oclProgram_);
+        oclProgram_ = NULL;
+    }
     if (oclQueue_)
     {
         clReleaseCommandQueue(oclQueue_);
@@ -41,6 +55,11 @@ void OclProcessor::release()
         clReleaseContext(oclContext_);
         oclContext_ = NULL;
     }
+}
+
+std::string OclProcessor::getKernelSource() const
+{
+    return "";
 }
 
 cl_int OclProcessor::getPlatformId(cl_platform_id &platformId) const
