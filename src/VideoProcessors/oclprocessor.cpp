@@ -1,6 +1,7 @@
 #include <oclprocessor.h>
 #include <array>
 #include <QDebug>
+#include <QFile>
 
 OclProcessor::~OclProcessor()
 {
@@ -23,15 +24,31 @@ cl_int OclProcessor::initialize()
     }
     if (oclQueue_)
     {
-        std::string kernelSource = std::move(getKernelSource());
-        const char *kernelSourceStr = kernelSource.c_str();
-        oclProgram_ = clCreateProgramWithSource(oclContext_, 1, &kernelSourceStr, NULL, NULL);
+        std::string kernelSourceStr = std::move(getKernelSource());
+        const char *kernelSource[] = { kernelSourceStr.c_str() };
+        oclProgram_ = clCreateProgramWithSource(oclContext_, 1, kernelSource, NULL, NULL);
     }
-    // TODO: investigate different optimization flags in khronos-opencl-1.1
-    // in section 5.6.3
-    if (!oclProgram_ ||
-        clBuildProgram(oclProgram_, 1, &deviceId, "-cl-std=CL1.2", NULL, NULL) != CL_SUCCESS)
+    // TODO: investigate different optimization flags from khronos-opencl-1.1
+    // at section 5.6.3
+    if (!oclProgram_)
     {
+        release();
+        return CL_INVALID_PROGRAM;
+    }
+    if (clBuildProgram(oclProgram_, 1, &deviceId, "-cl-std=CL1.2", NULL, NULL) != CL_SUCCESS)
+    {
+        const size_t logSizeMax = 32 * 1024;
+        char log[logSizeMax];
+        size_t logSize = 0;
+        if (clGetProgramBuildInfo(oclProgram_, deviceId, CL_PROGRAM_BUILD_LOG, logSizeMax,
+                log, &logSize) == CL_SUCCESS)
+        {
+            qDebug("\nOpenCL build log:\n%s\n", log);
+        }
+        else
+        {
+            qDebug("clGetProgamBuildInfo(...) failed");
+        }
         release();
         return CL_BUILD_PROGRAM_FAILURE;
     }
@@ -59,7 +76,17 @@ void OclProcessor::release()
 
 std::string OclProcessor::getKernelSource() const
 {
-    return "";
+    std::string kernelSource;
+    for (const std::string &path : kernelPaths_)
+    {
+        QFile f(path.c_str());
+        if (!f.open(QFile::ReadOnly))
+        {
+            return "Could not open: " + path + " for reading\n";
+        }
+        kernelSource += f.readAll().toStdString() + "\n\n\n";
+    }
+    return kernelSource;
 }
 
 cl_int OclProcessor::getPlatformId(cl_platform_id &platformId) const

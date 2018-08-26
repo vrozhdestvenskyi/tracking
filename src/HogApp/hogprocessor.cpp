@@ -13,7 +13,9 @@ HogProcessor::HogProcessor(QObject *parent)
     , ocvImageGray_(new cv::Mat_<uchar>())
     , ocvImageGrayFloat_(new cv::Mat_<float>())
     , hogPiotr_(nullptr)
-{}
+{
+    kernelPaths_ = { "hog.cl" };
+}
 
 HogProcessor::~HogProcessor()
 {

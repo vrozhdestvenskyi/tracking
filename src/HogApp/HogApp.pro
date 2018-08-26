@@ -34,10 +34,4 @@ HEADERS += \
 FORMS += \
     hogmainwin.ui
 
-#copydata.commands = $$copyToDestDir($${SRC_DIR}/Hog/hog.cl)
-#first.depends = $(first) copydata
-#export(first.depends)
-#export(copydata.commands)
-#QMAKE_EXTRA_TARGETS += first copydata
-
-$$copyToDestDir2($${SRC_DIR}/Hog/hog.cl)
+copyFilesToDestDir($${SRC_DIR}/Hog/*.cl)

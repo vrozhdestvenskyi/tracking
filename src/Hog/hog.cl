@@ -1,7 +1,7 @@
 __kernel void calculatePartialDerivatives(
     __global const float* restrict image,
-    __global const float* restrict derivativesX,
-    __global const float* restrict derivativesY,
+    __global float* restrict derivativesX,
+    __global float* restrict derivativesY,
     __local float* restrict imageLocal,
     const int iterations)
 {
@@ -62,12 +62,12 @@ __kernel void calculatePartialDerivatives(
         imageLocal[xLocalSrc + yLocal * widthLocal] = image[xGlobalSrc + yGlobal * widthGlobal];
         if (yLocal == 1)
         {
-            imageLocal[xLocalSrc] = image[xGlobalSrc + max(0, yGlobal - 1) * widthGlobal;
+            imageLocal[xLocalSrc] = image[xGlobalSrc + max(0, yGlobal - 1) * widthGlobal];
         }
         if (yLocal == heightLocal - 2)
         {
             imageLocal[xLocalSrc + (yLocal + 1) * widthLocal] =
-                image[xGlobalSrc + min(heightGlobal - 1, yGlobal + 1) * widthGlobal;
+                image[xGlobalSrc + min(heightGlobal - 1, yGlobal + 1) * widthGlobal];
         }
     }
 
