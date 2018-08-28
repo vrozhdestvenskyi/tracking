@@ -2,7 +2,7 @@
 #define HOGPROCESSOR_H
 
 #include <memory>
-#include <hogproto.h>
+#include <hog.h>
 #include <videoprocessor.h>
 
 namespace cv
@@ -29,6 +29,7 @@ signals:
 
 protected:
     void release();
+    void calculateHogOcl();
     void calculateHogPiotr();
     void compareDescriptors() const;
 
@@ -36,6 +37,7 @@ protected:
     std::shared_ptr<cv::Mat_<float> > ocvImageGrayFloat_ = nullptr;
     float *hogPiotr_ = nullptr;
     HogProto hogProto_;
+    Hog hog_;
 };
 
 #endif // HOGPROCESSOR_H

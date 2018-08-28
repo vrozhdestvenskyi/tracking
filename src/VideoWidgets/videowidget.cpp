@@ -14,7 +14,7 @@ VideoWidget::~VideoWidget()
 
 void VideoWidget::setFrame(const QImage &frame)
 {
-    frame_ = frame;
+    frame_ = frame.convertToFormat(QImage::Format_RGB888);
     update();
 }
 

@@ -24,6 +24,7 @@ HogProcessor::~HogProcessor()
 
 void HogProcessor::release()
 {
+    hog_.release();
     hogProto_.release();
     if (hogPiotr_)
     {
@@ -37,17 +38,27 @@ void HogProcessor::setupProcessor(const VideoProcessor::CaptureSettings &setting
     release();
     VideoProcessor::setupProcessor(settings);
 
+    auto emitError = [this](const QString &msg)
+    {
+        setVideoCaptureState(CaptureState::NotInitialized);
+        emit sendError(msg);
+    };
+
     HogSettings hogSettings;
     if (settings.frameWidth_ % hogSettings.cellSize_ ||
         settings.frameHeight_ % hogSettings.cellSize_)
     {
-        setVideoCaptureState(CaptureState::NotInitialized);
-        emit sendError("Image resolution is not a multiple of HOG cell size");
+        emitError("Image resolution is not a multiple of HOG cell size");
         return;
     }
     hogSettings.cellCount_[0] = settings.frameWidth_ / hogSettings.cellSize_;
     hogSettings.cellCount_[1] = settings.frameHeight_ / hogSettings.cellSize_;
     hogProto_.initialize(hogSettings);
+    if (hog_.initialize(hogSettings, oclContext_, oclProgram_) != CL_SUCCESS)
+    {
+        emitError("Failed to initialize Hog");
+        return;
+    }
 
     int cellCount = hogSettings.cellCount_[0] * hogSettings.cellCount_[1];
     int length = cellCount * hogSettings.channelsPerFeature();
@@ -59,6 +70,59 @@ void HogProcessor::setupProcessor(const VideoProcessor::CaptureSettings &setting
         0, hogSettings.sensitiveBinCount()
 //        hogSettings.sensitiveBinCount(), hogSettings.insensitiveBinCount_
     );
+}
+
+void HogProcessor::calculateHogOcl()
+{
+    cl_event imageWriteEvent = NULL;
+    size_t bytes = ocvImageGrayFloat_->rows * ocvImageGrayFloat_->cols * sizeof(cl_float);
+    cl_int status = clEnqueueWriteBuffer(oclQueue_, hog_.image_, CL_FALSE, 0, bytes,
+        ocvImageGrayFloat_->data, 0, NULL, &imageWriteEvent);
+    cl_event hogEvent = NULL;
+    if (status == CL_SUCCESS)
+    {
+        status = hog_.calculate(oclQueue_, 1, &imageWriteEvent, hogEvent);
+    }
+    if (imageWriteEvent)
+    {
+        clReleaseEvent(imageWriteEvent);
+        imageWriteEvent = NULL;
+    }
+    cl_float *derivativesX = NULL;
+    if (status == CL_SUCCESS)
+    {
+        derivativesX = (cl_float*)clEnqueueMapBuffer(oclQueue_, hog_.derivativesX_, CL_TRUE,
+            CL_MAP_READ, 0, bytes, 1, &hogEvent, NULL, &status);
+    }
+    if (hogEvent)
+    {
+        clReleaseEvent(hogEvent);
+        hogEvent = NULL;
+    }
+    if (derivativesX)
+    {
+        memcpy(ocvImageGrayFloat_->data, derivativesX, bytes);
+    }
+    cl_event unmapEvent = NULL;
+    if (derivativesX)
+    {
+        status = clEnqueueUnmapMemObject(oclQueue_, hog_.derivativesX_, derivativesX,
+            0, NULL, &unmapEvent);
+    }
+    ocvImageGrayFloat_->convertTo(*ocvImageGray_, CV_8UC1);
+    QImage qimage(ocvImageGray_->data, captureSettings_.frameWidth_, captureSettings_.frameHeight_,
+        captureSettings_.frameWidth_, QImage::Format_Indexed8);
+    emit sendFrame(qimage.copy());
+    if (unmapEvent)
+    {
+        clWaitForEvents(1, &unmapEvent);
+        clReleaseEvent(unmapEvent);
+        unmapEvent = NULL;
+    }
+    if (status != CL_SUCCESS)
+    {
+        qDebug("calculateHogOcl(...) failed");
+    }
 }
 
 void HogProcessor::calculateHogPiotr()
@@ -170,11 +234,12 @@ void HogProcessor::processFrame()
 
     calculateHogPiotr();
     hogProto_.calculate(ocvImageGray_->data);
+    calculateHogOcl();
     compareDescriptors();
 
-    QImage qimage(rgbFrame_, captureSettings_.frameWidth_, captureSettings_.frameHeight_,
-        captureSettings_.frameWidth_ * 3, QImage::Format_RGB888);
-    emit sendFrame(qimage.copy());
+//    QImage qimage(rgbFrame_, captureSettings_.frameWidth_, captureSettings_.frameHeight_,
+//        captureSettings_.frameWidth_ * 3, QImage::Format_RGB888);
+//    emit sendFrame(qimage.copy());
 
     const HogSettings &hogSettings = hogProto_.settings_;
     QVector<float> hogContainer(
