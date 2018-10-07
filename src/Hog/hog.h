@@ -17,9 +17,8 @@ public:
         const cl_event *waitList,
         cl_event &event);
 
-    cl_mem image_ = NULL;
-    cl_mem derivativesX_ = NULL;
-    cl_mem derivativesY_ = NULL;
+    cl_mem image_ = NULL; // TODO remove this
+    cl_mem cellDescriptor_ = NULL;
     cl_kernel kernel_ = NULL;
     size_t ndrangeLocal_[2] = { 0, 0 };
     size_t ndrangeGlobal_[2] = { 0, 0 };

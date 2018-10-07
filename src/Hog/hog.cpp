@@ -20,17 +20,14 @@ cl_int Hog::initialize(const HogSettings &settings, cl_context context, cl_progr
 
     int bytes = imageSize[0] * imageSize[1] * sizeof(cl_float);
     image_ = clCreateBuffer(context, CL_MEM_READ_ONLY, bytes, NULL, NULL);
+    bytes = bytes / settings.cellSize_ / settings.cellSize_ * settings.sensitiveBinCount();
     if (image_)
     {
-        derivativesX_ = clCreateBuffer(context, CL_MEM_READ_WRITE, bytes, NULL, NULL);
+        cellDescriptor_ = clCreateBuffer(context, CL_MEM_READ_WRITE, bytes, NULL, NULL);
     }
-    if (derivativesX_)
+    if (cellDescriptor_)
     {
-        derivativesY_ = clCreateBuffer(context, CL_MEM_READ_WRITE, bytes, NULL, NULL);
-    }
-    if (derivativesY_)
-    {
-        kernel_ = clCreateKernel(program, "calculatePartialDerivatives", NULL);
+        kernel_ = clCreateKernel(program, "calculateCellDescriptor", NULL);
     }
     if (!kernel_)
     {
@@ -38,14 +35,24 @@ cl_int Hog::initialize(const HogSettings &settings, cl_context context, cl_progr
         return CL_INVALID_KERNEL;
     }
 
+    int cellSize = settings.cellSize_;
+    int binsPerCell = settings.sensitiveBinCount();
+
     int argId = 0;
     cl_int status = clSetKernelArg(kernel_, argId++, sizeof(cl_mem), &image_);
-    status |= clSetKernelArg(kernel_, argId++, sizeof(cl_mem), &derivativesX_);
-    status |= clSetKernelArg(kernel_, argId++, sizeof(cl_mem), &derivativesY_);
-    bytes = (ndrangeLocal_[0] + 2) * (ndrangeLocal_[1] + 2) * sizeof(cl_float);
+    status |= clSetKernelArg(kernel_, argId++, sizeof(cl_mem), &image_);
+    bytes = (ndrangeLocal_[0] + 2) * (ndrangeLocal_[1] + 2 + cellSize) * sizeof(cl_float);
     status |= clSetKernelArg(kernel_, argId++, bytes, NULL);
-    int blocksX = imageSize[0] / ndrangeLocal_[0];
-    status |= clSetKernelArg(kernel_, argId++, sizeof(cl_int), &blocksX);
+    bytes = (ndrangeLocal_[0] + cellSize) * (ndrangeLocal_[1] + cellSize) * sizeof(cl_float);
+    status |= clSetKernelArg(kernel_, argId++, bytes, NULL);
+    status |= clSetKernelArg(kernel_, argId++, bytes, NULL);
+    bytes = ndrangeLocal_[0] * ndrangeLocal_[1] / cellSize / cellSize *
+        settings.sensitiveBinCount() * sizeof(cl_float);
+    status |= clSetKernelArg(kernel_, argId++, bytes, NULL);
+    int iterationsCount = imageSize[0] / ndrangeLocal_[0];
+    status |= clSetKernelArg(kernel_, argId++, sizeof(cl_int), &iterationsCount);
+    status |= clSetKernelArg(kernel_, argId++, sizeof(cl_int), &cellSize);
+    status |= clSetKernelArg(kernel_, argId++, sizeof(cl_int), &binsPerCell);
     return status;
 }
 
@@ -56,15 +63,10 @@ void Hog::release()
         clReleaseKernel(kernel_);
         kernel_ = nullptr;
     }
-    if (derivativesY_)
+    if (cellDescriptor_)
     {
-        clReleaseMemObject(derivativesY_);
-        derivativesY_ = NULL;
-    }
-    if (derivativesX_)
-    {
-        clReleaseMemObject(derivativesX_);
-        derivativesX_ = NULL;
+        clReleaseMemObject(cellDescriptor_);
+        cellDescriptor_ = NULL;
     }
     if (image_)
     {

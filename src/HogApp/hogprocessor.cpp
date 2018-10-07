@@ -88,10 +88,12 @@ void HogProcessor::calculateHogOcl()
         clReleaseEvent(imageWriteEvent);
         imageWriteEvent = NULL;
     }
-    cl_float *derivativesX = NULL;
+    bytes = hogProto_.settings_.cellCount_[0] * hogProto_.settings_.cellCount_[1] *
+        hogProto_.settings_.sensitiveBinCount() * sizeof(cl_float);
+    cl_float *cellDescriptor = NULL;
     if (status == CL_SUCCESS)
     {
-        derivativesX = (cl_float*)clEnqueueMapBuffer(oclQueue_, hog_.derivativesX_, CL_TRUE,
+        cellDescriptor = (cl_float*)clEnqueueMapBuffer(oclQueue_, hog_.cellDescriptor_, CL_TRUE,
             CL_MAP_READ, 0, bytes, 1, &hogEvent, NULL, &status);
     }
     if (hogEvent)
@@ -99,14 +101,14 @@ void HogProcessor::calculateHogOcl()
         clReleaseEvent(hogEvent);
         hogEvent = NULL;
     }
-    if (derivativesX)
+    if (cellDescriptor)
     {
-        memcpy(ocvImageGrayFloat_->data, derivativesX, bytes);
+        qDebug("Descriptor was successfully maped!");
     }
     cl_event unmapEvent = NULL;
-    if (derivativesX)
+    if (cellDescriptor)
     {
-        status = clEnqueueUnmapMemObject(oclQueue_, hog_.derivativesX_, derivativesX,
+        status = clEnqueueUnmapMemObject(oclQueue_, hog_.cellDescriptor_, cellDescriptor,
             0, NULL, &unmapEvent);
     }
     ocvImageGrayFloat_->convertTo(*ocvImageGray_, CV_8UC1);
