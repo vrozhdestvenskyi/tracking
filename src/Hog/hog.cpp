@@ -40,14 +40,14 @@ cl_int Hog::initialize(const HogSettings &settings, cl_context context, cl_progr
 
     int argId = 0;
     cl_int status = clSetKernelArg(kernel_, argId++, sizeof(cl_mem), &image_);
-    status |= clSetKernelArg(kernel_, argId++, sizeof(cl_mem), &image_);
+    status |= clSetKernelArg(kernel_, argId++, sizeof(cl_mem), &cellDescriptor_);
     bytes = (ndrangeLocal_[0] + 2) * (ndrangeLocal_[1] + 2 + cellSize) * sizeof(cl_float);
     status |= clSetKernelArg(kernel_, argId++, bytes, NULL);
     bytes = (ndrangeLocal_[0] + cellSize) * (ndrangeLocal_[1] + cellSize) * sizeof(cl_float);
     status |= clSetKernelArg(kernel_, argId++, bytes, NULL);
     status |= clSetKernelArg(kernel_, argId++, bytes, NULL);
     bytes = ndrangeLocal_[0] * ndrangeLocal_[1] / cellSize / cellSize *
-        settings.sensitiveBinCount() * sizeof(cl_float);
+        binsPerCell * sizeof(cl_float);
     status |= clSetKernelArg(kernel_, argId++, bytes, NULL);
     int iterationsCount = imageSize[0] / ndrangeLocal_[0];
     status |= clSetKernelArg(kernel_, argId++, sizeof(cl_int), &iterationsCount);

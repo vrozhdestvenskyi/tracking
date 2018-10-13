@@ -49,7 +49,6 @@ inline void interpHog(
         {
             const int derivIdLin = wiId.x + dx + (wiId.y + dy) * derivSize.x;
             const float2 gradient = (float2)(derivX[derivIdLin], derivY[derivIdLin]);
-            const float magnitude = length(gradient); // TODO fast_length
             const float angle = atan2pi(gradient.y, gradient.x) * 0.5f;
             const float bin = (float)binsPerCell * (angle + (float)(angle < 0.0f));
 
@@ -58,16 +57,15 @@ inline void interpHog(
             float2 interpBinWeights = bin - (float)interpBins.s0;
             interpBinWeights.s0 = 1.0f - interpBinWeights.s0;
             interpBins %= binsPerCell;
+            interpBins += (cellId.x + cellId.y * cellCountLocal.x) * binsPerCell;
 
             const float2 distance = fabs(convert_float2(cellSize - neighborId) - 0.5f);
             const float2 interpCellWeights = 1.0f - distance / cellSize;
+            // TODO fast_length
+            const float magnitude = length(gradient) * interpCellWeights.x * interpCellWeights.y;
 
-            interpBins += (cellId.x + cellId.y * cellCountLocal.x) * binsPerCell;
-
-            atomicAddLF(cellDescriptorLocal + interpBins.s0,
-                magnitude * interpCellWeights.s0 * interpBinWeights.s0);
-            atomicAddLF(cellDescriptorLocal + interpBins.s1,
-                magnitude * interpCellWeights.s1 * interpBinWeights.s1);
+            atomicAddLF(cellDescriptorLocal + interpBins.s0, magnitude * interpBinWeights.s0);
+            atomicAddLF(cellDescriptorLocal + interpBins.s1, magnitude * interpBinWeights.s1);
         }
     }
 }
@@ -142,7 +140,7 @@ void performHogIter(
     const int2 wgSize = (int2)(get_local_size(0), get_local_size(1));
     const int halfCellSize = cellSize / 2;
     const int2 imGlobalSize = (int2)(wgSize.x * iterationsCount, get_global_size(1));
-    const int wiIdLinear = wiId.x + wiId.y * wgSize.x;
+    const int wiIdLin = wiId.x + wiId.y * wgSize.x;
 
     // TODO reduce bank conflicts
     const int2 derivSize = wgSize + cellSize;
@@ -188,9 +186,9 @@ void performHogIter(
 
     const int2 cellsCountLocal = wgSize / cellSize;
     const int binsCountLocal = cellsCountLocal.x * cellsCountLocal.y * binsPerCell;
-    if (wiIdLinear < binsCountLocal)
+    if (wiIdLin < binsCountLocal)
     {
-        cellDescriptorLocal[wiIdLinear] = 0.0f;
+        cellDescriptorLocal[wiIdLin] = 0.0f;
     }
     barrier(CLK_LOCAL_MEM_FENCE);
 
@@ -198,16 +196,17 @@ void performHogIter(
     // TODO should we calculate insensitive bins in this kernel too?
     barrier(CLK_LOCAL_MEM_FENCE);
 
-    const int cellIdLocalLin = wiIdLinear / binsPerCell;
-    const int2 binIdLocal = wiId % binsPerCell;
-    const int2 cellIdGlobal =
-        (int2)(iteration, get_group_id(1)) * cellsCountLocal +
-        (int2)(cellIdLocalLin % cellsCountLocal.x, cellIdLocalLin / cellsCountLocal.x);
+    const int cellIdLocalLin = wiIdLin / binsPerCell;
+    const int binIdLocal = wiIdLin % binsPerCell;
+    const int2 cellIdLocal = (int2)(
+        cellIdLocalLin % cellsCountLocal.x,
+        cellIdLocalLin / cellsCountLocal.x);
+    const int2 cellIdGlobal = (int2)(iteration, get_group_id(1)) * cellsCountLocal + cellIdLocal;
     const int2 cellCountGlobal = imGlobalSize / cellSize;
-    if (wiIdLinear < binsCountLocal)
+    if (wiIdLin < binsCountLocal)
     {
-        cellDescriptorGlobal[(cellIdGlobal.x + cellIdGlobal.y) * binsPerCell] =
-            cellDescriptorLocal[wiIdLinear];
+        const int i = (cellIdGlobal.x + cellIdGlobal.y * cellCountGlobal.x) * binsPerCell;
+        cellDescriptorGlobal[i + binIdLocal] = cellDescriptorLocal[wiIdLin];
     }
 }
 

@@ -103,7 +103,7 @@ void HogProcessor::calculateHogOcl()
     }
     if (cellDescriptor)
     {
-        qDebug("Descriptor was successfully maped!");
+        compareDescriptorsOcl(cellDescriptor);
     }
     cl_event unmapEvent = NULL;
     if (cellDescriptor)
@@ -111,10 +111,6 @@ void HogProcessor::calculateHogOcl()
         status = clEnqueueUnmapMemObject(oclQueue_, hog_.cellDescriptor_, cellDescriptor,
             0, NULL, &unmapEvent);
     }
-    ocvImageGrayFloat_->convertTo(*ocvImageGray_, CV_8UC1);
-    QImage qimage(ocvImageGray_->data, captureSettings_.frameWidth_, captureSettings_.frameHeight_,
-        captureSettings_.frameWidth_, QImage::Format_Indexed8);
-    emit sendFrame(qimage.copy());
     if (unmapEvent)
     {
         clWaitForEvents(1, &unmapEvent);
@@ -227,6 +223,45 @@ void HogProcessor::compareDescriptors() const
         << (float)mismatchCountLast4 / (float)mismatchCount << "\n";
 }
 
+void HogProcessor::compareDescriptorsOcl(const float *mappedDescriptor) const
+{
+    const HogSettings &hogSettings = hogProto_.settings_;
+    int cellCount[2] = { hogSettings.cellCount_[0], hogSettings.cellCount_[1] };
+    int cellCountTotal = cellCount[0] * cellCount[1];
+    int channelsPerFeature = hogSettings.channelsPerFeature();
+    int sensitiveBinCount = hogSettings.sensitiveBinCount();
+
+    int mismatchCount = 0;
+    int nonZerosCount = 0;
+    for (int c = 0; c < cellCountTotal; ++c)
+    {
+        for (int b = 0; b < sensitiveBinCount; ++b)
+        {
+            int cellX = c % cellCount[0];
+            int cellY = c / cellCount[0];
+            if (cellX == 0 || cellX == cellCount[0] - 1 ||
+                cellY == 0 || cellY == cellCount[1] - 1)
+            {
+                //continue;
+            }
+
+            float ours = mappedDescriptor[c * sensitiveBinCount + b];
+            float gt = hogProto_.featureDescriptor_[c * channelsPerFeature + b];
+            float delta = gt - ours;
+            if (fabsf(delta) > gt * 0.05f)
+            {
+                mismatchCount++;
+            }
+            nonZerosCount += fabsf(gt) > 1e-3f;
+        }
+    }
+
+    int channelsTotal = cellCountTotal * sensitiveBinCount;
+    std::cout << "mismatched: " << mismatchCount << " from: " << channelsTotal
+        << ". mismatch ratio: " << (float)mismatchCount / (float)channelsTotal
+        << ". nonzeros: " << nonZerosCount << "\n";
+}
+
 void HogProcessor::processFrame()
 {
     if (!captureFrame())
@@ -237,11 +272,11 @@ void HogProcessor::processFrame()
     calculateHogPiotr();
     hogProto_.calculate(ocvImageGray_->data);
     calculateHogOcl();
-    compareDescriptors();
+//    compareDescriptors();
 
-//    QImage qimage(rgbFrame_, captureSettings_.frameWidth_, captureSettings_.frameHeight_,
-//        captureSettings_.frameWidth_ * 3, QImage::Format_RGB888);
-//    emit sendFrame(qimage.copy());
+    QImage qimage(rgbFrame_, captureSettings_.frameWidth_, captureSettings_.frameHeight_,
+        captureSettings_.frameWidth_ * 3, QImage::Format_RGB888);
+    emit sendFrame(qimage.copy());
 
     const HogSettings &hogSettings = hogProto_.settings_;
     QVector<float> hogContainer(
