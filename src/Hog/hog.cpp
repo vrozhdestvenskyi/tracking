@@ -20,8 +20,16 @@ cl_int Hog::initialize(const HogSettings &settings, cl_context context, cl_progr
 
     int bytes = imageSize[0] * imageSize[1] * sizeof(cl_float);
     image_ = clCreateBuffer(context, CL_MEM_READ_ONLY, bytes, NULL, NULL);
-    bytes = bytes / settings.cellSize_ / settings.cellSize_ * settings.sensitiveBinCount();
     if (image_)
+    {
+        derivsX_ = clCreateBuffer(context, CL_MEM_WRITE_ONLY, bytes, NULL, NULL);
+    }
+    if (derivsX_)
+    {
+        derivsY_ = clCreateBuffer(context, CL_MEM_WRITE_ONLY, bytes, NULL, NULL);
+    }
+    bytes = bytes / settings.cellSize_ / settings.cellSize_ * settings.sensitiveBinCount();
+    if (derivsY_)
     {
         cellDescriptor_ = clCreateBuffer(context, CL_MEM_READ_WRITE, bytes, NULL, NULL);
     }
@@ -40,6 +48,8 @@ cl_int Hog::initialize(const HogSettings &settings, cl_context context, cl_progr
 
     int argId = 0;
     cl_int status = clSetKernelArg(kernel_, argId++, sizeof(cl_mem), &image_);
+    status |= clSetKernelArg(kernel_, argId++, sizeof(cl_mem), &derivsX_);
+    status |= clSetKernelArg(kernel_, argId++, sizeof(cl_mem), &derivsY_);
     status |= clSetKernelArg(kernel_, argId++, sizeof(cl_mem), &cellDescriptor_);
     bytes = (ndrangeLocal_[0] + 2) * (ndrangeLocal_[1] + 2 + cellSize) * sizeof(cl_float);
     status |= clSetKernelArg(kernel_, argId++, bytes, NULL);
@@ -67,6 +77,16 @@ void Hog::release()
     {
         clReleaseMemObject(cellDescriptor_);
         cellDescriptor_ = NULL;
+    }
+    if (derivsY_)
+    {
+        clReleaseMemObject(derivsY_);
+        derivsY_ = NULL;
+    }
+    if (derivsX_)
+    {
+        clReleaseMemObject(derivsX_);
+        derivsX_ = NULL;
     }
     if (image_)
     {
