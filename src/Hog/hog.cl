@@ -55,11 +55,11 @@ inline void interpHog(
             int2 interpBins = (int)bin;
             interpBins.s1++;
             float2 interpBinWeights = bin - (float)interpBins.s0;
-            interpBinWeights.s0 = 1.0f - interpBinWeights.s0;
+            interpBinWeights.s0 = 1.0f - interpBinWeights.s1;
             interpBins %= binsPerCell;
             interpBins += (cellId.x + cellId.y * cellCountLocal.x) * binsPerCell;
 
-            const float2 distance = fabs(convert_float2(cellSize - neighborId) - 0.5f);
+            const float2 distance = fabs(convert_float2(cellSize - neighborId - (int2)(dx, dy)) - 0.5f);
             const float2 interpCellWeights = 1.0f - distance / cellSize;
             // TODO fast_length
             const float magnitude = length(gradient) * interpCellWeights.x * interpCellWeights.y;

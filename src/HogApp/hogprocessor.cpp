@@ -88,13 +88,12 @@ void HogProcessor::calculateHogOcl()
         clReleaseEvent(imageWriteEvent);
         imageWriteEvent = NULL;
     }
-//    bytes = hogProto_.settings_.cellCount_[0] * hogProto_.settings_.cellCount_[1] *
-//        hogProto_.settings_.sensitiveBinCount() * sizeof(cl_float);
-//    cl_float *cellDescriptor = NULL;
-    cl_float *derivsY = NULL;
+    bytes = hogProto_.settings_.cellCount_[0] * hogProto_.settings_.cellCount_[1] *
+        hogProto_.settings_.sensitiveBinCount() * sizeof(cl_float);
+    cl_float *cellDescriptor = NULL;
     if (status == CL_SUCCESS)
     {
-        derivsY = (cl_float*)clEnqueueMapBuffer(oclQueue_, hog_.derivsY_, CL_TRUE,
+        cellDescriptor = (cl_float*)clEnqueueMapBuffer(oclQueue_, hog_.cellDescriptor_, CL_TRUE,
             CL_MAP_READ, 0, bytes, 1, &hogEvent, NULL, &status);
     }
     if (hogEvent)
@@ -102,19 +101,14 @@ void HogProcessor::calculateHogOcl()
         clReleaseEvent(hogEvent);
         hogEvent = NULL;
     }
-    if (derivsY)
+    if (cellDescriptor)
     {
-        compareDescriptorsOcl(derivsY);
-        memcpy(ocvImageGrayFloat_->data, derivsY, bytes);
-        ocvImageGrayFloat_->convertTo(*ocvImageGray_, CV_8UC1);
-        QImage qimage(ocvImageGray_->data, captureSettings_.frameWidth_, captureSettings_.frameHeight_,
-            captureSettings_.frameWidth_, QImage::Format_Indexed8);
-        emit sendFrame(qimage.copy());
+        compareDescriptorsOcl(cellDescriptor);
     }
     cl_event unmapEvent = NULL;
-    if (derivsY)
+    if (cellDescriptor)
     {
-        status = clEnqueueUnmapMemObject(oclQueue_, hog_.derivsY_, derivsY,
+        status = clEnqueueUnmapMemObject(oclQueue_, hog_.cellDescriptor_, cellDescriptor,
             0, NULL, &unmapEvent);
     }
     if (unmapEvent)
@@ -231,10 +225,10 @@ void HogProcessor::compareDescriptors() const
 
 void HogProcessor::compareDescriptorsOcl(const float *mappedDescriptor) const
 {
-/*    const HogSettings &hogSettings = hogProto_.settings_;
+    const HogSettings &hogSettings = hogProto_.settings_;
     int cellCount[2] = { hogSettings.cellCount_[0], hogSettings.cellCount_[1] };
     int cellCountTotal = cellCount[0] * cellCount[1];
-    int channelsPerFeature = hogSettings.channelsPerFeature();
+    int channelsPerCell = hogSettings.channelsPerCell();
     int sensitiveBinCount = hogSettings.sensitiveBinCount();
 
     int mismatchCount = 0;
@@ -252,7 +246,7 @@ void HogProcessor::compareDescriptorsOcl(const float *mappedDescriptor) const
             }
 
             float ours = mappedDescriptor[c * sensitiveBinCount + b];
-            float gt = hogProto_.featureDescriptor_[c * channelsPerFeature + b];
+            float gt = hogProto_.cellDescriptor_[c * channelsPerCell + b];
             float delta = gt - ours;
             if (fabsf(delta) > gt * 0.05f)
             {
@@ -265,9 +259,9 @@ void HogProcessor::compareDescriptorsOcl(const float *mappedDescriptor) const
     int channelsTotal = cellCountTotal * sensitiveBinCount;
     std::cout << "mismatched: " << mismatchCount << " from: " << channelsTotal
         << ". mismatch ratio: " << (float)mismatchCount / (float)channelsTotal
-        << ". nonzeros: " << nonZerosCount << "\n";*/
+        << ". nonzeros: " << nonZerosCount << "\n";
 
-    int width = ocvImageGrayFloat_->cols;
+/*    int width = ocvImageGrayFloat_->cols;
     int height = ocvImageGrayFloat_->rows;
     int mismatchCount = 0;
     for (int y = 0; y < height; ++y)
@@ -288,7 +282,7 @@ void HogProcessor::compareDescriptorsOcl(const float *mappedDescriptor) const
     }
     int total = ocvImageGrayFloat_->rows * width;
     std::cout << "mismatched: " << mismatchCount << " from: " << total
-        << ". mismatch ratio: " << (float)mismatchCount / (float)total << "\n";
+        << ". mismatch ratio: " << (float)mismatchCount / (float)total << "\n";*/
 }
 
 void HogProcessor::processFrame()
@@ -303,9 +297,9 @@ void HogProcessor::processFrame()
     calculateHogOcl();
 //    compareDescriptors();
 
-//    QImage qimage(rgbFrame_, captureSettings_.frameWidth_, captureSettings_.frameHeight_,
-//        captureSettings_.frameWidth_ * 3, QImage::Format_RGB888);
-//    emit sendFrame(qimage.copy());
+    QImage qimage(rgbFrame_, captureSettings_.frameWidth_, captureSettings_.frameHeight_,
+        captureSettings_.frameWidth_ * 3, QImage::Format_RGB888);
+    emit sendFrame(qimage.copy());
 
     const HogSettings &hogSettings = hogProto_.settings_;
     QVector<float> hogContainer(
