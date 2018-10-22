@@ -11,9 +11,8 @@ inline int clamp(int x, int xMin, int xMax)
 template <typename T>
 inline float getPixel(const T *image, const int size[2], int x, int y)
 {
-    x = clamp(x, 0, size[0] - 1);
-    y = clamp(y, 0, size[1] - 1);
-    return (float)image[x + y * size[0]];
+    int isValid = (x >= 0) & (x < size[0]) & (y >= 0) & (y < size[1]);
+    return isValid ? (float)image[x + y * size[0]] : 0.0f;
 }
 
 inline void setPixel(

@@ -227,36 +227,33 @@ void HogProcessor::compareDescriptorsOcl(const float *mappedDescriptor) const
 {
     const HogSettings &hogSettings = hogProto_.settings_;
     int cellCount[2] = { hogSettings.cellCount_[0], hogSettings.cellCount_[1] };
-    int cellCountTotal = cellCount[0] * cellCount[1];
     int channelsPerCell = hogSettings.channelsPerCell();
     int sensitiveBinCount = hogSettings.sensitiveBinCount();
 
     int mismatchCount = 0;
     int nonZerosCount = 0;
-    for (int c = 0; c < cellCountTotal; ++c)
+    for (int y = 0; y < cellCount[1]; ++y)
     {
-        for (int b = 0; b < sensitiveBinCount; ++b)
+        for (int x = 0; x < cellCount[0]; ++x)
         {
-            int cellX = c % cellCount[0];
-            int cellY = c / cellCount[0];
-            if (cellX == 0 || cellX == cellCount[0] - 1 ||
-                cellY == 0 || cellY == cellCount[1] - 1)
+            for (int b = 0; b < sensitiveBinCount; ++b)
             {
-                //continue;
+                int c = x + y * cellCount[0];
+                float ours = mappedDescriptor[c * sensitiveBinCount + b];
+                float gt = hogProto_.cellDescriptor_[c * channelsPerCell + b];
+                float delta = gt - ours;
+                if (fabsf(delta) > fmaxf(gt, 1e-3f) * 0.01f)
+                {
+                    mismatchCount++;
+                    std::cout << "(" << x << ", " << y << ")\n";
+                }
+                nonZerosCount += fabsf(ours) > 1e-3f;
             }
-
-            float ours = mappedDescriptor[c * sensitiveBinCount + b];
-            float gt = hogProto_.cellDescriptor_[c * channelsPerCell + b];
-            float delta = gt - ours;
-            if (fabsf(delta) > gt * 0.05f)
-            {
-                mismatchCount++;
-            }
-            nonZerosCount += fabsf(ours) > 1e-3f;
         }
+//        std::cout << y << ": " << mismatchCount << "\n";
     }
 
-    int channelsTotal = cellCountTotal * sensitiveBinCount;
+    int channelsTotal = cellCount[0] * cellCount[1] * sensitiveBinCount;
     std::cout << "mismatched: " << mismatchCount << " from: " << channelsTotal
         << ". mismatch ratio: " << (float)mismatchCount / (float)channelsTotal
         << ". nonzeros: " << nonZerosCount << "\n";
