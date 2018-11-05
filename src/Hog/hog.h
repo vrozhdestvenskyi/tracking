@@ -18,8 +18,6 @@ public:
         cl_event &event);
 
     cl_mem image_ = NULL; // TODO remove this
-    cl_mem derivsX_ = NULL; // TODO remove this
-    cl_mem derivsY_ = NULL; // TODO remove this
     cl_mem cellDescriptor_ = NULL;
     cl_kernel kernel_ = NULL;
     size_t ndrangeLocal_[2] = { 0, 0 };

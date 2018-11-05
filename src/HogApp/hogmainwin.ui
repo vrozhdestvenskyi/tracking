@@ -42,6 +42,9 @@
         <property name="text">
          <string>Paused</string>
         </property>
+        <property name="shortcut">
+         <string>Ctrl+P</string>
+        </property>
        </widget>
       </item>
       <item>
@@ -62,6 +65,9 @@
         <property name="text">
          <string>OpenDirectory</string>
         </property>
+        <property name="shortcut">
+         <string>Ctrl+D</string>
+        </property>
        </widget>
       </item>
      </layout>
@@ -74,7 +80,7 @@
      <x>0</x>
      <y>0</y>
      <width>400</width>
-     <height>21</height>
+     <height>17</height>
     </rect>
    </property>
   </widget>

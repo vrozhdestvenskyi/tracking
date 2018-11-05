@@ -87,22 +87,26 @@ void VideoCaptureBase::setVideoCaptureState(VideoProcessor::CaptureState state)
     {
         throw std::runtime_error("Play/pause button wasn't initialized");
     }
+    QKeySequence shortcut = playPauseBtn_->shortcut();
     switch (state)
     {
     case VideoProcessor::CaptureState::NotInitialized:
         qDebug("VideoCaptureMainWin::setVideoCaptureState(NotInitialized)");
         playPauseBtn_->setEnabled(false);
         playPauseBtn_->setText(btnTextPaused_);
+        playPauseBtn_->setShortcut(shortcut);
         break;
     case VideoProcessor::CaptureState::Paused:
         qDebug("VideoCaptureMainWin::setVideoCaptureState(Paused)");
         playPauseBtn_->setEnabled(true);
         playPauseBtn_->setText(btnTextPaused_);
+        playPauseBtn_->setShortcut(shortcut);
         break;
     case VideoProcessor::CaptureState::Capturing:
         qDebug("VideoCaptureMainWin::setVideoCaptureState(Capturing)");
         playPauseBtn_->setEnabled(true);
         playPauseBtn_->setText(btnTextCapturing_);
+        playPauseBtn_->setShortcut(shortcut);
         break;
     default:
         throw std::runtime_error("Invalid video capture state");

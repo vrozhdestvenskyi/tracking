@@ -8,11 +8,10 @@ inline int clamp(int x, int xMin, int xMax)
     return std::max(std::min(x, xMax), xMin);
 }
 
-template <typename T>
-inline float getPixel(const T *image, const int size[2], int x, int y)
+inline float getPixel(const float *image, const int size[2], int x, int y)
 {
     int isValid = (x >= 0) & (x < size[0]) & (y >= 0) & (y < size[1]);
-    return isValid ? (float)image[x + y * size[0]] : 0.0f;
+    return isValid ? image[x + y * size[0]] : 0.0f;
 }
 
 inline void setPixel(
@@ -36,6 +35,18 @@ inline void calculateBinWeights(
     interpWeights[0] = 1.0f - interpWeights[1];
     interpBins[0] %= binCount;
     interpBins[1] %= binCount;
+}
+
+HogSettings::HogSettings(int imWidth, int imHeight)
+{
+    imSize_[0] = imWidth;
+    imSize_[1] = imHeight;
+    for (int i = 0; i < 2; ++i)
+    {
+        halfPadding_[i] = cellSize_ / 2 + 1;
+        cellCount_[i] = ((imSize_[i] - 2 * halfPadding_[i]) / wgSize_[i]) * wgSize_[i] / cellSize_;
+        halfPadding_[i] = (imSize_[i] - cellCount_[i] * cellSize_) / 2;
+    }
 }
 
 HogProto::~HogProto()
@@ -94,7 +105,7 @@ void HogProto::release()
     }
 }
 
-void HogProto::calculate(const uchar *image)
+void HogProto::calculate(const float *image)
 {
     calculateCellDescriptor(image);
     calculateInsensitiveNorms();
@@ -112,36 +123,37 @@ void HogProto::calculateCellInterpolationWeights()
     }
 }
 
-void HogProto::calculateCellDescriptor(const uchar *image)
+void HogProto::calculateCellDescriptor(const float *image)
 {
     int cellSize = settings_.cellSize_;
     int channelsPerCell = settings_.channelsPerCell();
     int sensitiveBinCount = settings_.sensitiveBinCount();
     int insensitiveBinCount = settings_.insensitiveBinCount_;
     int cellCount[2] = { settings_.cellCount_[0], settings_.cellCount_[1] };
-    int imageSize[2] = { cellCount[0] * cellSize, cellCount[1] * cellSize };
+    int imageSize[2] = { settings_.imSize_[0], settings_.imSize_[1] };
+    int halfPadding[2] = { settings_.halfPadding_[0], settings_.halfPadding_[1] };
     int cellDescriptorLength = cellCount[0] * cellCount[1] * channelsPerCell;
     std::fill(cellDescriptor_, cellDescriptor_ + cellDescriptorLength, 0.0f);
 
     for (int cellY = 0; cellY < cellCount[1]; ++cellY)
     {
-        int cellCenterPixelY = cellY * cellSize - cellSize / 2;
+        int leftmostPixelY = cellY * cellSize - cellSize / 2 + halfPadding[1];
         for (int cellX = 0; cellX < cellCount[0]; ++cellX)
         {
-            int cellCenterPixelX = cellX * cellSize - cellSize / 2;
+            int leftmostPixelX = cellX * cellSize - cellSize / 2 + halfPadding[0];
             for (int cellNeighborY = 0; cellNeighborY < 2 * cellSize; ++cellNeighborY)
             {
-                int pixelY = cellCenterPixelY + cellNeighborY;
+                int pixelY = leftmostPixelY + cellNeighborY;
                 for (int cellNeighborX = 0; cellNeighborX < 2 * cellSize; ++cellNeighborX)
                 {
-                    int pixelX = cellCenterPixelX + cellNeighborX;
+                    int pixelX = leftmostPixelX + cellNeighborX;
 
                     float gradientX =
-                        getPixel<uchar>(image, imageSize, pixelX + 1, pixelY) -
-                        getPixel<uchar>(image, imageSize, pixelX - 1, pixelY);
+                        image[pixelX + 1 + pixelY * imageSize[0]] -
+                        image[pixelX - 1 + pixelY * imageSize[0]];
                     float gradientY =
-                        getPixel<uchar>(image, imageSize, pixelX, pixelY + 1) -
-                        getPixel<uchar>(image, imageSize, pixelX, pixelY - 1);
+                        image[pixelX + (pixelY + 1) * imageSize[0]] -
+                        image[pixelX + (pixelY - 1) * imageSize[0]];
                     float magnitude = sqrtf(gradientX * gradientX + gradientY * gradientY);
 
                     float angle = atan2f(gradientY, gradientX);
@@ -200,11 +212,11 @@ void HogProto::calculateInsensitiveNorms()
         for (int x = -1; x <= cellCount[0]; ++x)
         {
             float inverseNorm = 1.0f / sqrtf(
-                getPixel<float>(cellSquaredNorms_, cellCount, x, y) +
-                getPixel<float>(cellSquaredNorms_, cellCount, x + 1, y) +
-                getPixel<float>(cellSquaredNorms_, cellCount, x, y + 1) +
-                getPixel<float>(cellSquaredNorms_, cellCount, x + 1, y + 1) +
-                1e-8f);
+                getPixel(cellSquaredNorms_, cellCount, x, y) +
+                getPixel(cellSquaredNorms_, cellCount, x + 1, y) +
+                getPixel(cellSquaredNorms_, cellCount, x, y + 1) +
+                getPixel(cellSquaredNorms_, cellCount, x + 1, y + 1) +
+                1e-7f);
             setPixel(blockInverseNorms_, inverseNorm, cellCount, 4, x, y, 0);
             setPixel(blockInverseNorms_, inverseNorm, cellCount, 4, x + 1, y, 1);
             setPixel(blockInverseNorms_, inverseNorm, cellCount, 4, x, y + 1, 2);

@@ -43,7 +43,10 @@ void HogWidget::setHog(const QVector<float> &hog)
             for (int b = 0; b < bins_; ++b)
             {
                 float length = hog[(x + y * cellCount_[0]) * channelsPerCell_ + channelLeft_ + b];
-                painter.drawLine(blockCenter, blockCenter + orientations[b] * length);
+                if (length > 1e-3f)
+                {
+                    painter.drawLine(blockCenter, blockCenter + orientations[b] * length);
+                }
             }
         }
     }
@@ -52,7 +55,6 @@ void HogWidget::setHog(const QVector<float> &hog)
 
 void HogWidget::setUp(int cellsX, int cellsY, int channelsPerCell, int channelLeft, int bins)
 {
-    qDebug("HogWidget::setUp(...)");
     if (bins != 9 && bins != 18)
     {
         throw std::runtime_error("Only 9- or 18-bin histograms can be visualized");
@@ -62,8 +64,6 @@ void HogWidget::setUp(int cellsX, int cellsY, int channelsPerCell, int channelLe
     channelsPerCell_ = channelsPerCell;
     channelLeft_ = channelLeft;
     bins_ = bins;
-    frame_ = QImage(
-        cellCount_[0] * cellSize_, cellCount_[1] * cellSize_, QImage::Format_RGB888
-    );
+    frame_ = QImage(cellCount_[0] * cellSize_, cellCount_[1] * cellSize_, QImage::Format_RGB888);
     update();
 }
