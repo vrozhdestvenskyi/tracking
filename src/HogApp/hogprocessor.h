@@ -32,7 +32,7 @@ protected:
     void calculateHogOcl();
     void calculateHogPiotr();
     void compareDescriptors() const;
-    void compareDescriptorsOcl(const float *mappedDescriptor) const;
+    void compareDescriptorsOcl(const uint *mappedDescriptor) const;
 
     std::shared_ptr<cv::Mat_<uchar> > ocvImageGray_ = nullptr;
     std::shared_ptr<cv::Mat_<float> > ocvImageGrayFloat_ = nullptr;

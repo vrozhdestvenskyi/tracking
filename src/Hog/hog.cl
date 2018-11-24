@@ -7,15 +7,33 @@ inline void calcPartialDerivs2(
     const int imLocalSizeX,
     const int derivSizeX)
 {
-    const int i = derivId.x + derivId.y * derivSizeX;
-    const int j = imLocalId.x + imLocalId.y * imLocalSizeX;
+    const int i = mad24(derivId.y, derivSizeX, derivId.x);
+    const int j = mad24(imLocalId.y, imLocalSizeX, imLocalId.x);
     derivX[i] = imLocal[j + 1] - imLocal[j - 1];
     derivY[i] = imLocal[j + imLocalSizeX] - imLocal[j - imLocalSizeX];
 }
 
+inline int calcOutputBinGlobal(
+    const int wiIdLin,
+    const int binsPerCell,
+    const int cellSize,
+    const int2 cellCountLocal,
+    const int imGlobalSizeX,
+    const int halfPaddingX)
+{
+    const int cellIdLocalLin = wiIdLin / binsPerCell;
+    const int binIdLocal = wiIdLin % binsPerCell;
+    const int2 cellIdLocal = (int2)(
+        cellIdLocalLin % cellCountLocal.x,
+        cellIdLocalLin / cellCountLocal.x);
+    const int2 cellIdGlobal = mad24((int2)(0, get_group_id(1)), cellCountLocal, cellIdLocal);
+    const int cellCountGlobalX = (imGlobalSizeX - 2 * halfPaddingX) / cellSize;
+    return mad24(mad24(cellIdGlobal.y, cellCountGlobalX, cellIdGlobal.x), binsPerCell, binIdLocal);
+}
+
 __kernel void calculateCellDescriptor(
     __global const float* restrict imGlobal,
-    __global float* restrict cellDescriptorGlobal,
+    __global unsigned int* restrict cellDescriptorGlobal,
     __local float* restrict imLocal,
     __local float* restrict derivX,
     __local float* restrict derivY,
@@ -27,8 +45,10 @@ __kernel void calculateCellDescriptor(
 {
     const int2 wiId = (int2)(get_local_id(0), get_local_id(1));
     const int2 wgSize = (int2)(get_local_size(0), get_local_size(1));
-    const int wiIdLin = wiId.x + wiId.y * wgSize.x;
-    const int2 imGlobalSize = (int2)(wgSize.x * iterationsCount, get_global_size(1)) + 2 * halfPadding;
+    const int wiIdLin = mad24(wiId.y, wgSize.x, wiId.x);
+    const int wgSizeLin = mul24(wgSize.x, wgSize.y);
+    const int2 imGlobalSize = (int2)(mul24(wgSize.x, iterationsCount), get_global_size(1)) +
+        2 * halfPadding;
     // TODO reduce bank conflicts
     const int2 imLocalSize = wgSize + (int2)(0, cellSize) + 2;
     const int2 derivSize = wgSize + cellSize;
@@ -38,29 +58,24 @@ __kernel void calculateCellDescriptor(
     // block differs from anothers because the leftmost part of the global image does not
     // exist.
     {
-        const int initSizeX = cellSize + 2;
-        const int2 imLocalId = (int2)(wiIdLin % initSizeX, wiIdLin / initSizeX);
-        const int2 imGlobalId = imLocalId + (int2)(0, get_group_id(1) * wgSize.y) +
+        const int2 imLocalId = (int2)(wiIdLin / imLocalSize.y, wiIdLin % imLocalSize.y);
+        const int2 imGlobalId = imLocalId + (int2)(0, mul24((int)get_group_id(1), wgSize.y)) +
             halfPadding - halfCellSize - 1;
-        // TODO when cellSize is 8, not all pixels will be loaded
-        if (imLocalId.y < imLocalSize.y)
-        {
-            imLocal[imLocalId.x + imLocalId.y * imLocalSize.x] =
-                imGlobal[imGlobalId.x + imGlobalId.y * imGlobalSize.x];
-        }
+        imLocal[mad24(imLocalId.y, imLocalSize.x, imLocalId.x)] =
+            imGlobal[mad24(imGlobalId.y, imGlobalSize.x, imGlobalId.x)];
 
         barrier(CLK_LOCAL_MEM_FENCE);
         if (imLocalId.x > 0 && imLocalId.y > 0 &&
-            imLocalId.x + 1 < initSizeX && imLocalId.y + 1 < imLocalSize.y)
+            imLocalId.x + 1 < cellSize + 2 && imLocalId.y + 1 < imLocalSize.y)
         {
             calcPartialDerivs2(imLocal, derivX, derivY, imLocalId, imLocalId - 1,
                 imLocalSize.x, derivSize.x);
         }
 
         barrier(CLK_LOCAL_MEM_FENCE);
-        if (imLocalId.x < 2 && imLocalId.y < imLocalSize.y)
+        if (imLocalId.x < 2)
         {
-            const int i = imLocalId.x + imLocalId.y * imLocalSize.x;
+            const int i = mad24(imLocalId.y, imLocalSize.x, imLocalId.x);
             imLocal[i] = imLocal[i + cellSize];
         }
     }
@@ -68,20 +83,54 @@ __kernel void calculateCellDescriptor(
     const int2 imGlobalId = halfPadding + (int2)(wiId.x + halfCellSize + 1, get_global_id(1));
     const int2 imLocalId = wiId + (int2)(0, halfCellSize) + 1;
     const int2 derivId = wiId + (int2)(cellSize, halfCellSize);
-    __local float* locMid = imLocal + imLocalId.x + 1 + imLocalId.y * imLocalSize.x;
-    __local float* locTop = locMid - (halfCellSize + 1) * imLocalSize.x;
-    __local float* locBot = locMid + (halfCellSize + 1) * imLocalSize.x;
-    __global const float* globMid = imGlobal + imGlobalId.x + imGlobalId.y * imGlobalSize.x;
-    __global const float* globTop = globMid - (halfCellSize + 1) * imGlobalSize.x;
-    __global const float* globBot = globMid + (halfCellSize + 1) * imGlobalSize.x;
+    const int load2dir = wiId.y < halfCellSize + 1 ? -1 :
+        (wiId.y >= wgSize.y - halfCellSize - 1 ? 1 : 0);
+    __local float* const locLoad = imLocal + mad24(imLocalId.y, imLocalSize.x, imLocalId.x + 1);
+    __local float* const locLoad2 = locLoad +
+        mul24(load2dir, mul24(halfCellSize + 1, imLocalSize.x));
+    __global const float* const globLoad = imGlobal +
+        mad24(imGlobalId.y, imGlobalSize.x, imGlobalId.x);
+    __global const float* const globLoad2 = globLoad +
+        mul24(load2dir, mul24(halfCellSize + 1, imGlobalSize.x));
+    const int deriv2dir = wiId.y < halfCellSize ? -1 : (wiId.y >= wgSize.y - halfCellSize ? 1 : 0);
+    const int2 imLocalId2 = imLocalId + deriv2dir * (int2)(0, halfCellSize);
+    const int2 derivId2 = derivId + deriv2dir * (int2)(0, halfCellSize);
 
+    const int2 neighborId = wiId % cellSize;
+    const int2 cellCountLocal = wgSize / cellSize;
+    const int2 cellIdLocal = (int2)(wiId.x / cellSize, wiId.y / cellSize);
+    __local unsigned int* const dstCellLocal = cellDescriptorLocal +
+        mul24(mad24(cellIdLocal.y, cellCountLocal.x, cellIdLocal.x), binsPerCell);
     const float accuracy = 1e6f;
+
+    int derivIdsLin[4];
+    float interpCellWeights[4];
+    for (int i = 0; i < 4; ++i)
+    {
+        const int2 adjacent = mul24((int2)(i % 2, i / 2), cellSize);
+        derivIdsLin[i] = mad24(wiId.y + adjacent.y, derivSize.x, wiId.x + adjacent.x);
+        const float2 dist = fabs(convert_float2(cellSize - neighborId - adjacent) - 0.5f);
+        const float2 weight = 1.0f - half_divide(dist, cellSize);
+        interpCellWeights[i] = weight.x * weight.y * accuracy;
+    }
+
+    const int hasChannel2 = wiIdLin + wgSizeLin <
+        mul24(mul24(cellCountLocal.x, cellCountLocal.y), binsPerCell);
+    __local const unsigned int* const dstChannelLocal = cellDescriptorLocal + wiIdLin;
+    __local const unsigned int* const dstChannelLocal2 = dstChannelLocal +
+        mul24(hasChannel2, wgSizeLin);
+    __global unsigned int* const dstChannelGlobal = cellDescriptorGlobal + calcOutputBinGlobal(
+        wiIdLin, binsPerCell, cellSize, cellCountLocal, imGlobalSize.x, halfPadding.x);
+    __global unsigned int* const dstChannelGlobal2 = !hasChannel2 ? dstChannelGlobal :
+        (cellDescriptorGlobal + calcOutputBinGlobal(
+            wiIdLin + wgSizeLin, binsPerCell, cellSize, cellCountLocal,
+            imGlobalSize.x, halfPadding.x));
 
     const int2 derivIdCopy = (int2)(wiIdLin % cellSize, wiIdLin / cellSize);
     const int2 imLocalIdCopy = (int2)(wiIdLin % 2, wiIdLin / 2);
-    __local float* copyIm = imLocal + imLocalIdCopy.x + imLocalIdCopy.y * imLocalSize.x;
-    __local float* copyX = derivX + derivIdCopy.x + derivIdCopy.y * derivSize.x;
-    __local float* copyY = derivY + derivIdCopy.x + derivIdCopy.y * derivSize.x;
+    __local float* const copyIm = imLocal + mad24(imLocalIdCopy.y, imLocalSize.x, imLocalIdCopy.x);
+    __local float* const copyX = derivX + mad24(derivIdCopy.y, derivSize.x, derivIdCopy.x);
+    __local float* const copyY = derivY + mad24(derivIdCopy.y, derivSize.x, derivIdCopy.x);
 
     for (int iteration = 0; iteration < iterationsCount; ++iteration)
     {
@@ -89,135 +138,42 @@ __kernel void calculateCellDescriptor(
         // derivatives have been already loaded, so we have to load the rest of data,
         // calculate the rest of derivatives and finally calculate the descriptor for
         // all the cells which are covered by current iteration
+        barrier(CLK_LOCAL_MEM_FENCE);
+        int tmpId = mul24(iteration, wgSize.x);
+        *locLoad = globLoad[tmpId];
+        *locLoad2 = globLoad2[tmpId];
+
+        barrier(CLK_LOCAL_MEM_FENCE);
+        calcPartialDerivs2(imLocal, derivX, derivY, imLocalId, derivId, imLocalSize.x, derivSize.x);
+        calcPartialDerivs2(imLocal, derivX, derivY, imLocalId2, derivId2, imLocalSize.x, derivSize.x);
+        cellDescriptorLocal[wiIdLin] = 0;
+        cellDescriptorLocal[wiIdLin + wgSizeLin] = 0;
+
+        barrier(CLK_LOCAL_MEM_FENCE);
+        #pragma unroll
+        for (int i = 0; i < 4; ++i)
         {
-            barrier(CLK_LOCAL_MEM_FENCE);
-            *locMid = *globMid;
-            if (wiId.y < halfCellSize + 1)
-            {
-                *locTop = *globTop;
-            }
-            if (wiId.y >= wgSize.y - halfCellSize - 1)
-            {
-                *locBot = *globBot;
-            }
-            globMid += wgSize.y;
-            globTop += wgSize.y;
-            globBot += wgSize.y;
+            const float2 grad = (float2)(derivX[derivIdsLin[i]], derivY[derivIdsLin[i]]);
+            const float mag = fast_length(grad) * interpCellWeights[i];
+            const float ang = atan2pi(grad.y, grad.x) * 0.5f;
+            const float bin = (float)binsPerCell * (ang + (float)(ang < 0.0f));
 
-            barrier(CLK_LOCAL_MEM_FENCE);
-            calcPartialDerivs2(imLocal, derivX, derivY, imLocalId, derivId, imLocalSize.x, derivSize.x);
-            if (wiId.y < halfCellSize)
-            {
-                calcPartialDerivs2(imLocal, derivX, derivY,
-                    imLocalId - (int2)(0, halfCellSize),
-                    derivId - (int2)(0, halfCellSize),
-                    imLocalSize.x, derivSize.x);
-            }
-            if (wiId.y >= wgSize.y - halfCellSize)
-            {
-                calcPartialDerivs2(imLocal, derivX, derivY,
-                    imLocalId + (int2)(0, halfCellSize),
-                    derivId + (int2)(0, halfCellSize),
-                    imLocalSize.x, derivSize.x);
-            }
+            int2 interpBins = (int)bin;
+            interpBins.s1++;
+            float2 interpBinWeights = bin - (float)interpBins.s0;
+            interpBinWeights.s0 = 1.0f - interpBinWeights.s1;
+            interpBins %= binsPerCell;
 
-            const int2 cellsCountLocal = wgSize / cellSize;
-            const int binsCountLocal = cellsCountLocal.x * cellsCountLocal.y * binsPerCell;
-            const int wgSizeLin = wgSize.x * wgSize.y;
-            cellDescriptorLocal[wiIdLin] = 0;
-            if (wiIdLin + wgSizeLin < binsCountLocal)
-            {
-                cellDescriptorLocal[wiIdLin + wgSizeLin] = 0;
-            }
-
-            barrier(CLK_LOCAL_MEM_FENCE);
-            {
-                const int2 cellId = wiId / cellSize;
-                const int2 neighborId = wiId % cellSize;
-                const int2 cellCountLocal = wgSize / cellSize;
-
-                for (int dy = 0; dy <= cellSize; dy += cellSize)
-                {
-                    for (int dx = 0; dx <= cellSize; dx += cellSize)
-                    {
-                        const int derivIdLin = wiId.x + dx + (wiId.y + dy) * derivSize.x;
-                        const float2 gradient = (float2)(derivX[derivIdLin], derivY[derivIdLin]);
-                        const float angle = atan2pi(gradient.y, gradient.x) * 0.5f;
-                        const float bin = (float)binsPerCell * (angle + (float)(angle < 0.0f));
-
-                        int2 interpBins = (int)bin;
-                        interpBins.s1++;
-                        float2 interpBinWeights = bin - (float)interpBins.s0;
-                        interpBinWeights.s0 = 1.0f - interpBinWeights.s1;
-                        interpBins %= binsPerCell;
-                        interpBins += (cellId.x + cellId.y * cellCountLocal.x) * binsPerCell;
-
-                        const float2 distance = fabs(convert_float2(cellSize - neighborId - (int2)(dx, dy)) - 0.5f);
-                        const float2 interpCellWeights = 1.0f - distance / cellSize;
-                        // TODO fast_length
-                        const float magnitude = length(gradient) * interpCellWeights.x * interpCellWeights.y;
-
-                        atomic_add(cellDescriptorLocal + interpBins.s0,
-                            convert_uint_sat(magnitude * interpBinWeights.s0 * accuracy));
-                        atomic_add(cellDescriptorLocal + interpBins.s1,
-                            convert_uint_sat(magnitude * interpBinWeights.s1 * accuracy));
-                    }
-                }
-
-                /*const int8 derivIds = wiId + (int8)(0, 0, cellSize, 0, 0, cellSize, cellSize, cellSize);
-                const int4 derivIdsLin = derivIds.even + derivIds.odd * derivSize.x;
-
-                const float8 grads = (float8)(
-                    derivX[derivIdLin.s0], derivY[derivIdLin.s0],
-                    derivX[derivIdLin.s1], derivY[derivIdLin.s1],
-                    derivX[derivIdLin.s2], derivY[derivIdLin.s2],
-                    derivX[derivIdLin.s3], derivY[derivIdLin.s3]);
-                const float4 angs = atan2pi(grads.odd, grads.even) * 0.5;
-                const float4 bins = (float4)(binsPerCell) * (angs + (float4)(angs < 0.0f));
-
-                int8 interpBins = (int8)(bins, bins);
-                interpBins.odd++;
-                float8 interpBinWeights = bins - (float)interpBins.s0;
-                interpBinWeights.s0 = 1.0f - interpBinWeights.s1;
-                interpBins %= binsPerCell;
-                interpBins += (cellId.x + cellId.y * cellCountLocal.x) * binsPerCell;*/
-            }
-            // TODO should we calculate insensitive bins in this kernel too?
-
-            //
-            barrier(CLK_LOCAL_MEM_FENCE);
-            {
-                const int cellIdLocalLin = wiIdLin / binsPerCell;
-                const int binIdLocal = wiIdLin % binsPerCell;
-                const int2 cellIdLocal = (int2)(
-                    cellIdLocalLin % cellsCountLocal.x,
-                    cellIdLocalLin / cellsCountLocal.x);
-                const int2 cellIdGlobal = (int2)(iteration, get_group_id(1)) * cellsCountLocal + cellIdLocal;
-                const int2 cellCountGlobal = (imGlobalSize - 2 * halfPadding) / cellSize;
-
-                const int i = (cellIdGlobal.x + cellIdGlobal.y * cellCountGlobal.x) * binsPerCell;
-                cellDescriptorGlobal[i + binIdLocal] = cellDescriptorLocal[wiIdLin] / accuracy;
-            }
-            {
-                const int cellIdLocalLin = (wiIdLin + wgSizeLin) / binsPerCell;
-                const int binIdLocal = (wiIdLin + wgSizeLin) % binsPerCell;
-                const int2 cellIdLocal = (int2)(
-                    cellIdLocalLin % cellsCountLocal.x,
-                    cellIdLocalLin / cellsCountLocal.x);
-                const int2 cellIdGlobal = (int2)(iteration, get_group_id(1)) * cellsCountLocal + cellIdLocal;
-                const int2 cellCountGlobal = (imGlobalSize - 2 * halfPadding) / cellSize;
-
-                if (wiIdLin + wgSizeLin < binsCountLocal)
-                {
-                    const int i = (cellIdGlobal.x + cellIdGlobal.y * cellCountGlobal.x) * binsPerCell;
-                    cellDescriptorGlobal[i + binIdLocal] = cellDescriptorLocal[wiIdLin + wgSizeLin] /
-                        accuracy;
-                }
-            }
+            atomic_add(dstCellLocal + interpBins.s0, convert_uint_sat(mag * interpBinWeights.s0));
+            atomic_add(dstCellLocal + interpBins.s1, convert_uint_sat(mag * interpBinWeights.s1));
         }
 
-        // Prepare to the next iteration: copy parts of local image and its derivatives
         barrier(CLK_LOCAL_MEM_FENCE);
+        tmpId = mul24(mul24(iteration, cellCountLocal.x), binsPerCell);
+        dstChannelGlobal[tmpId] = *dstChannelLocal;
+        dstChannelGlobal2[tmpId] = *dstChannelLocal2;
+
+        // Prepare to the next iteration: copy parts of local image and its derivatives
         if (derivIdCopy.y < derivSize.y)
         {
             *copyX = copyX[wgSize.x];

@@ -17,7 +17,7 @@ cl_int Hog::initialize(const HogSettings &settings, cl_context context, cl_progr
     int bytes = settings.imSize_[0] * settings.imSize_[1] * sizeof(cl_float);
     image_ = clCreateBuffer(context, CL_MEM_READ_ONLY, bytes, NULL, NULL);
     bytes = settings.cellCount_[0] * settings.cellCount_[1] * settings.sensitiveBinCount() *
-        sizeof(cl_float);
+        sizeof(cl_uint);
     if (image_)
     {
         cellDescriptor_ = clCreateBuffer(context, CL_MEM_READ_WRITE, bytes, NULL, NULL);
@@ -44,8 +44,7 @@ cl_int Hog::initialize(const HogSettings &settings, cl_context context, cl_progr
     bytes = (ndrangeLocal_[0] + cellSize) * (ndrangeLocal_[1] + cellSize) * sizeof(cl_float);
     status |= clSetKernelArg(kernel_, argId++, bytes, NULL);
     status |= clSetKernelArg(kernel_, argId++, bytes, NULL);
-    bytes = ndrangeLocal_[0] * ndrangeLocal_[1] / cellSize / cellSize *
-        binsPerCell * sizeof(cl_uint);
+    bytes = ndrangeLocal_[0] * ndrangeLocal_[1] * 2 * sizeof(cl_uint);
     status |= clSetKernelArg(kernel_, argId++, bytes, NULL);
     int iterationsCount = settings.cellCount_[0] * settings.cellSize_ / ndrangeLocal_[0];
     status |= clSetKernelArg(kernel_, argId++, sizeof(cl_int), &iterationsCount);

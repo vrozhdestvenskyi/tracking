@@ -82,10 +82,10 @@ void HogProcessor::calculateHogOcl()
     }
     bytes = hogProto_.settings_.cellCount_[0] * hogProto_.settings_.cellCount_[1] *
         hogProto_.settings_.sensitiveBinCount() * sizeof(cl_float);
-    cl_float *cellDescriptor = NULL;
+    cl_uint *cellDescriptor = NULL;
     if (status == CL_SUCCESS)
     {
-        cellDescriptor = (cl_float*)clEnqueueMapBuffer(oclQueue_, hog_.cellDescriptor_, CL_TRUE,
+        cellDescriptor = (cl_uint*)clEnqueueMapBuffer(oclQueue_, hog_.cellDescriptor_, CL_TRUE,
             CL_MAP_READ, 0, bytes, 1, &hogEvent, NULL, &status);
     }
     if (hogEvent)
@@ -204,7 +204,7 @@ void HogProcessor::compareDescriptors() const
         << (float)mismatchCountLast4 / (float)mismatchCount << "\n";
 }
 
-void HogProcessor::compareDescriptorsOcl(const float *mappedDescriptor) const
+void HogProcessor::compareDescriptorsOcl(const uint *mappedDescriptor) const
 {
     const HogSettings &hogSettings = hogProto_.settings_;
     int cellCount[2] = { hogSettings.cellCount_[0], hogSettings.cellCount_[1] };
@@ -220,7 +220,7 @@ void HogProcessor::compareDescriptorsOcl(const float *mappedDescriptor) const
             for (int b = 0; b < sensitiveBinCount; ++b)
             {
                 int c = x + y * cellCount[0];
-                float ours = mappedDescriptor[c * sensitiveBinCount + b];
+                float ours = (float)mappedDescriptor[c * sensitiveBinCount + b] * 1e-6f;
                 float gt = hogProto_.cellDescriptor_[c * channelsPerCell + b];
                 float delta = gt - ours;
                 if (fabsf(delta) > fmaxf(gt, 1e-3f) * 0.01f)
