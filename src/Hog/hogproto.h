@@ -12,7 +12,7 @@ struct HogSettings
     // TODO: create a separate structure HogParameters
     int sensitiveBinCount() const { return insensitiveBinCount_ * 2; }
     int channelsPerCell() const { return insensitiveBinCount_ + sensitiveBinCount(); }
-    int channelsPerFeature() const { return channelsPerCell() + 4; }
+    int channelsPerBlock() const { return channelsPerCell() + 4; }
     int insensitiveBinCount_ = 9;
     int cellSize_ = 4;
     int wgSize_[2] = { 16, 16 };
@@ -35,7 +35,7 @@ public:
     float *cellSquaredNorms_ = nullptr;
     float *blockInverseNorms_ = nullptr;
     float *cellDescriptor_ = nullptr;
-    float *featureDescriptor_ = nullptr;
+    float *blockDescriptor_ = nullptr;
     float *cellInterpWeights_ = nullptr;
 
 protected:

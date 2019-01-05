@@ -1,18 +1,39 @@
 #include <hog.h>
+#include <vector>
 
-Hog::~Hog()
+void RangedKernel::release()
+{
+    if (kernel_)
+    {
+        clReleaseKernel(kernel_);
+        kernel_ = NULL;
+    }
+}
+
+cl_int RangedKernel::calculate(
+    cl_command_queue commandQueue,
+    cl_int numWaitEvents,
+    const cl_event *waitList,
+    cl_event &event)
+{
+    return clEnqueueNDRangeKernel(commandQueue, kernel_, dim_, NULL,
+        ndrangeGlob_, ndrangeLoc_, numWaitEvents, waitList, &event);
+}
+
+CellHog::~CellHog()
 {
     release();
 }
 
-cl_int Hog::initialize(const HogSettings &settings, cl_context context, cl_program program)
+cl_int CellHog::initialize(const HogSettings &settings, cl_context context, cl_program program)
 {
+    kernel_.dim_ = 2;
     for (int i = 0; i < 2; ++i)
     {
-        ndrangeLocal_[i] = settings.wgSize_[i];
+        kernel_.ndrangeLoc_[i] = settings.wgSize_[i];
     }
-    ndrangeGlobal_[0] = ndrangeLocal_[0];
-    ndrangeGlobal_[1] = settings.cellCount_[1] * settings.cellSize_;
+    kernel_.ndrangeGlob_[0] = kernel_.ndrangeLoc_[0];
+    kernel_.ndrangeGlob_[1] = settings.cellCount_[1] * settings.cellSize_;
 
     int bytes = settings.imSize_[0] * settings.imSize_[1] * sizeof(cl_float);
     image_ = clCreateBuffer(context, CL_MEM_READ_ONLY, bytes, NULL, NULL);
@@ -20,13 +41,13 @@ cl_int Hog::initialize(const HogSettings &settings, cl_context context, cl_progr
         sizeof(cl_uint);
     if (image_)
     {
-        cellDescriptor_ = clCreateBuffer(context, CL_MEM_READ_WRITE, bytes, NULL, NULL);
+        descriptor_ = clCreateBuffer(context, CL_MEM_READ_WRITE, bytes, NULL, NULL);
     }
-    if (cellDescriptor_)
+    if (descriptor_)
     {
-        kernel_ = clCreateKernel(program, "calculateCellDescriptor", NULL);
+        kernel_.kernel_ = clCreateKernel(program, "calcCellDesc", NULL);
     }
-    if (!kernel_)
+    if (!kernel_.kernel_)
     {
         release();
         return CL_INVALID_KERNEL;
@@ -37,34 +58,30 @@ cl_int Hog::initialize(const HogSettings &settings, cl_context context, cl_progr
     cl_int2 halfPadding = { settings.halfPadding_[0], settings.halfPadding_[1] };
 
     int argId = 0;
-    cl_int status = clSetKernelArg(kernel_, argId++, sizeof(cl_mem), &image_);
-    status |= clSetKernelArg(kernel_, argId++, sizeof(cl_mem), &cellDescriptor_);
-    bytes = (ndrangeLocal_[0] + 2) * (ndrangeLocal_[1] + 2 + cellSize) * sizeof(cl_float);
-    status |= clSetKernelArg(kernel_, argId++, bytes, NULL);
-    bytes = (ndrangeLocal_[0] + cellSize) * (ndrangeLocal_[1] + cellSize) * sizeof(cl_float);
-    status |= clSetKernelArg(kernel_, argId++, bytes, NULL);
-    status |= clSetKernelArg(kernel_, argId++, bytes, NULL);
-    bytes = ndrangeLocal_[0] * ndrangeLocal_[1] * 2 * sizeof(cl_uint);
-    status |= clSetKernelArg(kernel_, argId++, bytes, NULL);
-    int iterationsCount = settings.cellCount_[0] * settings.cellSize_ / ndrangeLocal_[0];
-    status |= clSetKernelArg(kernel_, argId++, sizeof(cl_int), &iterationsCount);
-    status |= clSetKernelArg(kernel_, argId++, sizeof(cl_int), &cellSize);
-    status |= clSetKernelArg(kernel_, argId++, sizeof(cl_int), &binsPerCell);
-    status |= clSetKernelArg(kernel_, argId++, sizeof(cl_int2), &halfPadding);
+    cl_int status = clSetKernelArg(kernel_.kernel_, argId++, sizeof(cl_mem), &image_);
+    status |= clSetKernelArg(kernel_.kernel_, argId++, sizeof(cl_mem), &descriptor_);
+    bytes = (kernel_.ndrangeLoc_[0] + 2) * (kernel_.ndrangeLoc_[1] + 2 + cellSize) * sizeof(cl_float);
+    status |= clSetKernelArg(kernel_.kernel_, argId++, bytes, NULL);
+    bytes = (kernel_.ndrangeLoc_[0] + cellSize) * (kernel_.ndrangeLoc_[1] + cellSize) * sizeof(cl_float);
+    status |= clSetKernelArg(kernel_.kernel_, argId++, bytes, NULL);
+    status |= clSetKernelArg(kernel_.kernel_, argId++, bytes, NULL);
+    bytes = kernel_.ndrangeLoc_[0] * kernel_.ndrangeLoc_[1] * 2 * sizeof(cl_uint);
+    status |= clSetKernelArg(kernel_.kernel_, argId++, bytes, NULL);
+    int iterationsCount = settings.cellCount_[0] * settings.cellSize_ / kernel_.ndrangeLoc_[0];
+    status |= clSetKernelArg(kernel_.kernel_, argId++, sizeof(cl_int), &iterationsCount);
+    status |= clSetKernelArg(kernel_.kernel_, argId++, sizeof(cl_int), &cellSize);
+    status |= clSetKernelArg(kernel_.kernel_, argId++, sizeof(cl_int), &binsPerCell);
+    status |= clSetKernelArg(kernel_.kernel_, argId++, sizeof(cl_int2), &halfPadding);
     return status;
 }
 
-void Hog::release()
+void CellHog::release()
 {
-    if (kernel_)
+    kernel_.release();
+    if (descriptor_)
     {
-        clReleaseKernel(kernel_);
-        kernel_ = nullptr;
-    }
-    if (cellDescriptor_)
-    {
-        clReleaseMemObject(cellDescriptor_);
-        cellDescriptor_ = NULL;
+        clReleaseMemObject(descriptor_);
+        descriptor_ = NULL;
     }
     if (image_)
     {
@@ -73,13 +90,286 @@ void Hog::release()
     }
 }
 
-cl_int Hog::calculate(
+cl_int CellHog::calculate(
     cl_command_queue commandQueue,
     cl_int numWaitEvents,
     const cl_event *waitList,
     cl_event &event)
 {
-    return clEnqueueNDRangeKernel(commandQueue, kernel_, 2, NULL, ndrangeGlobal_,
-        ndrangeLocal_, numWaitEvents, waitList, &event);
+    return kernel_.calculate(commandQueue, numWaitEvents, waitList, event);
+}
+
+CellNorm::~CellNorm()
+{
+    release();
+}
+
+cl_int CellNorm::initialize(
+    const HogSettings &settings,
+    cl_context context,
+    cl_program program,
+    cl_mem sensitiveCellDescriptor)
+{
+    kernel_.dim_ = 2;
+    kernel_.ndrangeLoc_[0] = kernel_.ndrangeLoc_[1] = 4;
+    if (settings.cellCount_[0] % kernel_.ndrangeLoc_[0] ||
+        settings.cellCount_[1] % kernel_.ndrangeLoc_[1])
+    {
+        return CL_INVALID_WORK_GROUP_SIZE;
+    }
+    kernel_.ndrangeGlob_[0] = kernel_.ndrangeLoc_[0];
+    kernel_.ndrangeGlob_[1] = settings.cellCount_[1];
+    padding_ = { (int)kernel_.ndrangeLoc_[0] + 1, (int)kernel_.ndrangeLoc_[1] + 1 };
+
+    size_t bytes = (settings.cellCount_[0] + padding_.x) * (settings.cellCount_[1] + padding_.y) *
+        sizeof(cl_float);
+    {
+        std::vector<float> zeros(bytes, 0.0f);
+        cellNorms_ = clCreateBuffer(context, CL_MEM_READ_WRITE | CL_MEM_COPY_HOST_PTR,
+            bytes, zeros.data(), NULL);
+    }
+    if (cellNorms_)
+    {
+        kernel_.kernel_ = clCreateKernel(program, "calcCellNorms", NULL);
+    }
+    if (!kernel_.kernel_)
+    {
+        release();
+        return CL_INVALID_KERNEL;
+    }
+
+    int argId = 0;
+    cl_int status = clSetKernelArg(kernel_.kernel_, argId++, sizeof(cl_mem), &sensitiveCellDescriptor);
+    status |= clSetKernelArg(kernel_.kernel_, argId++, sizeof(cl_mem), &cellNorms_);
+    int iterationsCount = settings.cellCount_[0] / kernel_.ndrangeLoc_[0];
+    status |= clSetKernelArg(kernel_.kernel_, argId++, sizeof(cl_int), &iterationsCount);
+    int sensitiveBinCount = settings.sensitiveBinCount();
+    status |= clSetKernelArg(kernel_.kernel_, argId++, sizeof(cl_int), &sensitiveBinCount);
+    status |= clSetKernelArg(kernel_.kernel_, argId++, sizeof(cl_int), &padding_.x);
+    return status;
+}
+
+void CellNorm::release()
+{
+    kernel_.release();
+    if (cellNorms_)
+    {
+        clReleaseMemObject(cellNorms_);
+        cellNorms_ = NULL;
+    }
+}
+
+cl_int CellNorm::calculate(
+    cl_command_queue commandQueue,
+    cl_int numWaitEvents,
+    const cl_event *waitList,
+    cl_event &event)
+{
+    return kernel_.calculate(commandQueue, numWaitEvents, waitList, event);
+}
+
+CellNormSumX::~CellNormSumX()
+{
+    release();
+}
+
+cl_int CellNormSumX::initialize(
+    const HogSettings &settings,
+    const cl_int2 &padding,
+    cl_context context,
+    cl_program program,
+    cl_mem cellNorms)
+{
+    kernel_.dim_ = 2;
+    kernel_.ndrangeLoc_[0] = kernel_.ndrangeLoc_[1] = 4;
+    kernel_.ndrangeGlob_[0] = kernel_.ndrangeLoc_[0];
+    kernel_.ndrangeGlob_[1] = settings.cellCount_[1] + padding.y - 1;
+    if ((settings.cellCount_[0] + padding.x - 1) % kernel_.ndrangeLoc_[0] ||
+        kernel_.ndrangeGlob_[1] % kernel_.ndrangeLoc_[1])
+    {
+        return CL_INVALID_WORK_GROUP_SIZE;
+    }
+
+    size_t bytes = (settings.cellCount_[0] + padding.x) * (settings.cellCount_[1] + padding.y) *
+        sizeof(cl_float);
+    {
+        std::vector<float> zeros(bytes, 0.0f);
+        normSums_ = clCreateBuffer(context, CL_MEM_READ_WRITE | CL_MEM_COPY_HOST_PTR,
+            bytes, zeros.data(), NULL);
+    }
+    if (normSums_)
+    {
+        kernel_.kernel_ = clCreateKernel(program, "sumCellNormsX", NULL);
+    }
+    if (!kernel_.kernel_)
+    {
+        release();
+        return CL_INVALID_KERNEL;
+    }
+
+    int argId = 0;
+    cl_int status = clSetKernelArg(kernel_.kernel_, argId++, sizeof(cl_mem), &cellNorms);
+    status |= clSetKernelArg(kernel_.kernel_, argId++, sizeof(cl_mem), &normSums_);
+    bytes = (kernel_.ndrangeLoc_[0] + 1) * kernel_.ndrangeLoc_[1] * sizeof(cl_float);
+    status |= clSetKernelArg(kernel_.kernel_, argId++, bytes, NULL);
+    int iterationsCount = (settings.cellCount_[0] + padding.x - 1) / kernel_.ndrangeLoc_[0];
+    status |= clSetKernelArg(kernel_.kernel_, argId++, sizeof(cl_int), &iterationsCount);
+    return status;
+}
+
+void CellNormSumX::release()
+{
+    kernel_.release();
+    if (normSums_)
+    {
+        clReleaseMemObject(normSums_);
+        normSums_ = NULL;
+    }
+}
+
+cl_int CellNormSumX::calculate(
+    cl_command_queue commandQueue,
+    cl_int numWaitEvents,
+    const cl_event *waitList,
+    cl_event &event)
+{
+    return kernel_.calculate(commandQueue, numWaitEvents, waitList, event);
+}
+
+InvBlockNorm::~InvBlockNorm()
+{
+    release();
+}
+
+cl_int InvBlockNorm::initialize(
+    const HogSettings &settings,
+    const cl_int2 &padding,
+    cl_context context,
+    cl_program program,
+    cl_mem cellNorms)
+{
+    kernel_.dim_ = 2;
+    kernel_.ndrangeLoc_[0] = kernel_.ndrangeLoc_[1] = 4;
+    kernel_.ndrangeGlob_[0] = settings.cellCount_[0] + padding.x - 1;
+    kernel_.ndrangeGlob_[1] = kernel_.ndrangeLoc_[1];
+    if (kernel_.ndrangeGlob_[0] % kernel_.ndrangeLoc_[0] ||
+        (settings.cellCount_[1] + padding.y - 1) % kernel_.ndrangeLoc_[1])
+    {
+        return CL_INVALID_WORK_GROUP_SIZE;
+    }
+
+    size_t bytes = (settings.cellCount_[0] + padding.x) * (settings.cellCount_[1] + padding.y) *
+        sizeof(cl_float);
+    {
+        std::vector<float> zeros(bytes, 0.0f);
+        invBlockNorms_ = clCreateBuffer(context, CL_MEM_READ_WRITE | CL_MEM_COPY_HOST_PTR,
+            bytes, zeros.data(), NULL);
+    }
+    if (invBlockNorms_)
+    {
+        kernel_.kernel_ = clCreateKernel(program, "calcInvBlockNorms", NULL);
+    }
+    if (!kernel_.kernel_)
+    {
+        release();
+        return CL_INVALID_KERNEL;
+    }
+
+    int argId = 0;
+    cl_int status = clSetKernelArg(kernel_.kernel_, argId++, sizeof(cl_mem), &cellNorms);
+    status |= clSetKernelArg(kernel_.kernel_, argId++, sizeof(cl_mem), &invBlockNorms_);
+    bytes = kernel_.ndrangeLoc_[0] * (kernel_.ndrangeLoc_[1] + 1) * sizeof(cl_float);
+    status |= clSetKernelArg(kernel_.kernel_, argId++, bytes, NULL);
+    int iterationsCount = (settings.cellCount_[1] + padding.y - 1) / kernel_.ndrangeLoc_[1];
+    status |= clSetKernelArg(kernel_.kernel_, argId++, sizeof(cl_int), &iterationsCount);
+    return status;
+}
+
+void InvBlockNorm::release()
+{
+    kernel_.release();
+    if (invBlockNorms_)
+    {
+        clReleaseMemObject(invBlockNorms_);
+        invBlockNorms_ = NULL;
+    }
+}
+
+cl_int InvBlockNorm::calculate(
+    cl_command_queue commandQueue,
+    cl_int numWaitEvents,
+    const cl_event *waitList,
+    cl_event &event)
+{
+    return kernel_.calculate(commandQueue, numWaitEvents, waitList, event);
+}
+
+BlockHog::~BlockHog()
+{
+    release();
+}
+
+cl_int BlockHog::initialize(
+    const HogSettings &settings,
+    const cl_int2 &padding,
+    cl_context context,
+    cl_program program,
+    cl_mem cellDesc,
+    cl_mem invBlockNorms)
+{
+    kernel_.dim_ = 2;
+    kernel_.ndrangeLoc_[0] = kernel_.ndrangeLoc_[1] = 4;
+    kernel_.ndrangeGlob_[0] = kernel_.ndrangeLoc_[0];
+    kernel_.ndrangeGlob_[1] = settings.cellCount_[1];
+    if (settings.cellCount_[0] % kernel_.ndrangeLoc_[0] ||
+        kernel_.ndrangeGlob_[1] % kernel_.ndrangeLoc_[1])
+    {
+        return CL_INVALID_WORK_GROUP_SIZE;
+    }
+
+    size_t bytes = settings.cellCount_[0] * settings.cellCount_[1] * settings.channelsPerBlock() *
+        sizeof(cl_float);
+    descriptor_ = clCreateBuffer(context, CL_MEM_READ_WRITE, bytes, NULL, NULL);
+    if (descriptor_)
+    {
+        kernel_.kernel_ = clCreateKernel(program, "applyNormalization", NULL);
+    }
+    if (!kernel_.kernel_)
+    {
+        release();
+        return CL_INVALID_KERNEL;
+    }
+
+    int argId = 0;
+    cl_int status = clSetKernelArg(kernel_.kernel_, argId++, sizeof(cl_mem), &cellDesc);
+    status |= clSetKernelArg(kernel_.kernel_, argId++, sizeof(cl_mem), &invBlockNorms);
+    status |= clSetKernelArg(kernel_.kernel_, argId++, sizeof(cl_mem), &descriptor_);
+    bytes = (kernel_.ndrangeLoc_[0] + 1) * (kernel_.ndrangeLoc_[1] + 1) * sizeof(cl_float);
+    status |= clSetKernelArg(kernel_.kernel_, argId++, bytes, NULL);
+    int iterationsCount = settings.cellCount_[0] / kernel_.ndrangeLoc_[0];
+    status |= clSetKernelArg(kernel_.kernel_, argId++, sizeof(cl_int), &iterationsCount);
+    status |= clSetKernelArg(kernel_.kernel_, argId++, sizeof(cl_int), &padding.x);
+    int insBinCnt = settings.insensitiveBinCount_;
+    status |= clSetKernelArg(kernel_.kernel_, argId++, sizeof(cl_int), &insBinCnt);
+    return status;
+}
+
+void BlockHog::release()
+{
+    kernel_.release();
+    if (descriptor_)
+    {
+        clReleaseMemObject(descriptor_);
+        descriptor_ = NULL;
+    }
+}
+
+cl_int BlockHog::calculate(
+    cl_command_queue commandQueue,
+    cl_int numWaitEvents,
+    const cl_event *waitList,
+    cl_event &event)
+{
+    return kernel_.calculate(commandQueue, numWaitEvents, waitList, event);
 }
 

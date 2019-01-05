@@ -67,9 +67,9 @@ void HogProto::initialize(const HogSettings &settings)
     int cellDescriptorLength = cellCount * settings.channelsPerCell();
     cellDescriptor_ = new float [cellDescriptorLength];
     std::fill(cellDescriptor_, cellDescriptor_ + cellDescriptorLength, 0.0f);
-    int featureDescriptorLength = cellCount * settings.channelsPerFeature();
-    featureDescriptor_ = new float [featureDescriptorLength];
-    std::fill(featureDescriptor_, featureDescriptor_ + featureDescriptorLength, 0.0f);
+    int featureDescriptorLength = cellCount * settings.channelsPerBlock();
+    blockDescriptor_ = new float [featureDescriptorLength];
+    std::fill(blockDescriptor_, blockDescriptor_ + featureDescriptorLength, 0.0f);
     int weightsCount = 2 * settings.cellSize_;
     cellInterpWeights_ = new float [weightsCount];
     std::fill(cellInterpWeights_, cellInterpWeights_ + weightsCount, 0.0f);
@@ -93,10 +93,10 @@ void HogProto::release()
         delete [] cellDescriptor_;
         cellDescriptor_ = nullptr;
     }
-    if (featureDescriptor_)
+    if (blockDescriptor_)
     {
-        delete [] featureDescriptor_;
-        featureDescriptor_ = nullptr;
+        delete [] blockDescriptor_;
+        blockDescriptor_ = nullptr;
     }
     if (cellInterpWeights_)
     {
@@ -230,10 +230,10 @@ void HogProto::applyNormalization()
     int sensitiveBinCount = settings_.sensitiveBinCount();
     int insensitiveBinCount = settings_.insensitiveBinCount_;
     int channelsPerCell = settings_.channelsPerCell();
-    int channelsPerFeature = settings_.channelsPerFeature();
+    int channelsPerBlock = settings_.channelsPerBlock();
     int cellCountTotal = settings_.cellCount_[0] * settings_.cellCount_[1];
     float truncation = settings_.truncation_;
-    std::fill(featureDescriptor_, featureDescriptor_ + cellCountTotal * channelsPerFeature, 0.0f);
+    std::fill(blockDescriptor_, blockDescriptor_ + cellCountTotal * channelsPerBlock, 0.0f);
 
     for (int c = 0; c < cellCountTotal; ++c)
     {
@@ -245,7 +245,7 @@ void HogProto::applyNormalization()
             {
                 normalized += 0.5f * fminf(unnormalized * blockInverseNorms_[c * 4 + i], truncation);
             }
-            featureDescriptor_[c * channelsPerFeature + b] = normalized;
+            blockDescriptor_[c * channelsPerBlock + b] = normalized;
         }
         for (int i = 0; i < 4; ++i)
         {
@@ -257,7 +257,7 @@ void HogProto::applyNormalization()
                     normalization * cellDescriptor_[c * channelsPerCell + sensitiveBinCount + b],
                     truncation);
             }
-            featureDescriptor_[c * channelsPerFeature + channelsPerCell + i] = normalized;
+            blockDescriptor_[c * channelsPerBlock + channelsPerCell + i] = normalized;
         }
     }
 }

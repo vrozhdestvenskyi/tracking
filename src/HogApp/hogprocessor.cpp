@@ -24,6 +24,8 @@ HogProcessor::~HogProcessor()
 
 void HogProcessor::release()
 {
+    cellNormSumX_.release();
+    cellNorm_.release();
     hog_.release();
     hogProto_.release();
     if (hogPiotr_)
@@ -48,17 +50,40 @@ void HogProcessor::setupProcessor(const VideoProcessor::CaptureSettings &setting
     hogProto_.initialize(hogSettings);
     if (hog_.initialize(hogSettings, oclContext_, oclProgram_) != CL_SUCCESS)
     {
-        emitError("Failed to initialize Hog");
+        emitError("Failed to initialize CellHog");
+        return;
+    }
+    if (cellNorm_.initialize(hogSettings, oclContext_, oclProgram_, hog_.descriptor_) != CL_SUCCESS)
+    {
+        emitError("Failed to initialize CellNorm");
+        return;
+    }
+    if (cellNormSumX_.initialize(hogSettings, cellNorm_.padding_, oclContext_, oclProgram_,
+            cellNorm_.cellNorms_) != CL_SUCCESS)
+    {
+        emitError("Failed to initialize CellNormSumX");
+        return;
+    }
+    if (invBlockNorm_.initialize(hogSettings, cellNorm_.padding_, oclContext_, oclProgram_,
+            cellNormSumX_.normSums_) != CL_SUCCESS)
+    {
+        emitError("Failed to initialize InvBlockNorm");
+        return;
+    }
+    if (blockHog_.initialize(hogSettings, cellNorm_.padding_, oclContext_, oclProgram_,
+            hog_.descriptor_, invBlockNorm_.invBlockNorms_) != CL_SUCCESS)
+    {
+        emitError("Failed to initialize BlockHog");
         return;
     }
 
     int cellCount = hogSettings.cellCount_[0] * hogSettings.cellCount_[1];
-    int length = cellCount * hogSettings.channelsPerFeature();
+    int length = cellCount * hogSettings.channelsPerBlock();
     hogPiotr_ = new float [length];
     std::fill(hogPiotr_, hogPiotr_ + length, 0.0f);
 
     emit sendHogSettings(
-        hogSettings.cellCount_[0], hogSettings.cellCount_[1], hogSettings.channelsPerFeature(),
+        hogSettings.cellCount_[0], hogSettings.cellCount_[1], hogSettings.channelsPerBlock(),
         0, hogSettings.sensitiveBinCount()
 //        hogSettings.sensitiveBinCount(), hogSettings.insensitiveBinCount_
     );
@@ -70,37 +95,78 @@ void HogProcessor::calculateHogOcl()
     size_t bytes = ocvImageGrayFloat_->rows * ocvImageGrayFloat_->cols * sizeof(cl_float);
     cl_int status = clEnqueueWriteBuffer(oclQueue_, hog_.image_, CL_FALSE, 0, bytes,
         ocvImageGrayFloat_->data, 0, NULL, &imageWriteEvent);
-    cl_event hogEvent = NULL;
+    cl_event cellHogEvent = NULL;
     if (status == CL_SUCCESS)
     {
-        status = hog_.calculate(oclQueue_, 1, &imageWriteEvent, hogEvent);
+        status = hog_.calculate(oclQueue_, 1, &imageWriteEvent, cellHogEvent);
     }
     if (imageWriteEvent)
     {
         clReleaseEvent(imageWriteEvent);
         imageWriteEvent = NULL;
     }
-    bytes = hogProto_.settings_.cellCount_[0] * hogProto_.settings_.cellCount_[1] *
-        hogProto_.settings_.sensitiveBinCount() * sizeof(cl_float);
-    cl_uint *cellDescriptor = NULL;
+    cl_event cellNormEvent = NULL;
     if (status == CL_SUCCESS)
     {
-        cellDescriptor = (cl_uint*)clEnqueueMapBuffer(oclQueue_, hog_.cellDescriptor_, CL_TRUE,
-            CL_MAP_READ, 0, bytes, 1, &hogEvent, NULL, &status);
+        status = cellNorm_.calculate(oclQueue_, 1, &cellHogEvent, cellNormEvent);
     }
-    if (hogEvent)
+    if (cellHogEvent)
     {
-        clReleaseEvent(hogEvent);
-        hogEvent = NULL;
+        clReleaseEvent(cellHogEvent);
+        cellHogEvent = NULL;
     }
-    if (cellDescriptor)
+    cl_event sumXevent = NULL;
+    if (status == CL_SUCCESS)
     {
-        compareDescriptorsOcl(cellDescriptor);
+        status = cellNormSumX_.calculate(oclQueue_, 1, &cellNormEvent, sumXevent);
+    }
+    if (cellNormEvent)
+    {
+        clReleaseEvent(cellNormEvent);
+        cellNormEvent = NULL;
+    }
+    cl_event blockNormEvent = NULL;
+    if (status == CL_SUCCESS)
+    {
+        status = invBlockNorm_.calculate(oclQueue_, 1, &sumXevent, blockNormEvent);
+    }
+    if (sumXevent)
+    {
+        clReleaseEvent(sumXevent);
+        sumXevent = NULL;
+    }
+    cl_event blockHogEvent = NULL;
+    if (status == CL_SUCCESS)
+    {
+        status = blockHog_.calculate(oclQueue_, 1, &blockNormEvent, blockHogEvent);
+    }
+    if (blockNormEvent)
+    {
+        clReleaseEvent(blockNormEvent);
+        blockNormEvent = NULL;
+    }
+    bytes = hogProto_.settings_.cellCount_[0] * hogProto_.settings_.cellCount_[1] *
+        hogProto_.settings_.channelsPerBlock() * sizeof(cl_float);
+    cl_float *mappedDesc = NULL;
+    if (status == CL_SUCCESS)
+    {
+        mappedDesc = (cl_float*)clEnqueueMapBuffer(oclQueue_, blockHog_.descriptor_, CL_TRUE,
+            CL_MAP_READ, 0, bytes, 1, &blockHogEvent, NULL, &status);
+    }
+    if (blockHogEvent)
+    {
+        clReleaseEvent(blockHogEvent);
+        blockHogEvent = NULL;
+    }
+    if (mappedDesc)
+    {
+        compareDescriptorsOcl(mappedDesc);
+        //compareDescriptors(mappedDesc);
     }
     cl_event unmapEvent = NULL;
-    if (cellDescriptor)
+    if (mappedDesc)
     {
-        status = clEnqueueUnmapMemObject(oclQueue_, hog_.cellDescriptor_, cellDescriptor,
+        status = clEnqueueUnmapMemObject(oclQueue_, blockHog_.descriptor_, mappedDesc,
             0, NULL, &unmapEvent);
     }
     if (unmapEvent)
@@ -148,7 +214,7 @@ void HogProcessor::calculateHogPiotr()
     std::vector<cv::Mat> hogPiotr = FHoG::extract(
         ocvImGrayCropped, 2, hogSettings.cellSize_, hogSettings.insensitiveBinCount_,
         1, hogSettings.truncation_);
-    for (int c = 0; c < hogSettings.channelsPerFeature(); ++c)
+    for (int c = 0; c < hogSettings.channelsPerBlock(); ++c)
     {
         const cv::Mat &hogChannel = hogPiotr[c];
         for (int y = 0; y < hogSettings.cellCount_[1]; ++y)
@@ -156,19 +222,19 @@ void HogProcessor::calculateHogPiotr()
             for (int x = 0; x < hogSettings.cellCount_[0]; ++x)
             {
                 int featureIndex = x + y * hogSettings.cellCount_[0];
-                hogPiotr_[featureIndex * hogSettings.channelsPerFeature() + c] =
+                hogPiotr_[featureIndex * hogSettings.channelsPerBlock() + c] =
                     hogChannel.at<float>(y, x);
             }
         }
     }
 }
 
-void HogProcessor::compareDescriptors() const
+void HogProcessor::compareDescriptors(const float *desc) const
 {
     const HogSettings &hogSettings = hogProto_.settings_;
     int cellCount[2] = { hogSettings.cellCount_[0], hogSettings.cellCount_[1] };
     int cellCountTotal = cellCount[0] * cellCount[1];
-    int channelsPerFeature = hogSettings.channelsPerFeature();
+    int channelsPerFeature = hogSettings.channelsPerBlock();
 
     int mismatchCount = 0;
     int mismatchCountLast4 = 0;
@@ -186,7 +252,8 @@ void HogProcessor::compareDescriptors() const
             }
 
             int channelIndex = c * channelsPerFeature + b;
-            float ours = hogProto_.featureDescriptor_[channelIndex];
+            //float ours = hogProto_.blockDescriptor_[channelIndex];
+            float ours = desc[channelIndex];
             float gt = hogPiotr_[channelIndex];
             float delta = gt - ours;
             if (fabsf(delta) > fmaxf(gt * 0.05f, 1e-3f))
@@ -204,12 +271,11 @@ void HogProcessor::compareDescriptors() const
         << (float)mismatchCountLast4 / (float)mismatchCount << "\n";
 }
 
-void HogProcessor::compareDescriptorsOcl(const uint *mappedDescriptor) const
+void HogProcessor::compareDescriptorsOcl(const float *mappedDescriptor) const
 {
     const HogSettings &hogSettings = hogProto_.settings_;
     int cellCount[2] = { hogSettings.cellCount_[0], hogSettings.cellCount_[1] };
-    int channelsPerCell = hogSettings.channelsPerCell();
-    int sensitiveBinCount = hogSettings.sensitiveBinCount();
+    int binCntPerBlock = hogSettings.channelsPerBlock();
 
     int mismatchCount = 0;
     int nonZerosCount = 0;
@@ -217,16 +283,16 @@ void HogProcessor::compareDescriptorsOcl(const uint *mappedDescriptor) const
     {
         for (int x = 0; x < cellCount[0]; ++x)
         {
-            for (int b = 0; b < sensitiveBinCount; ++b)
+            for (int b = 0; b < binCntPerBlock; ++b)
             {
                 int c = x + y * cellCount[0];
-                float ours = (float)mappedDescriptor[c * sensitiveBinCount + b] * 1e-6f;
-                float gt = hogProto_.cellDescriptor_[c * channelsPerCell + b];
+                float ours = (float)mappedDescriptor[c * binCntPerBlock + b];// * 1e-6f;
+                float gt = hogProto_.blockDescriptor_[c * binCntPerBlock + b];
                 float delta = gt - ours;
                 if (fabsf(delta) > fmaxf(gt, 1e-3f) * 0.01f)
                 {
                     mismatchCount++;
-//                    std::cout << "(" << x << ", " << y << ")\n";
+//                    std::cout << "(" << x << ", " << y << ", " << b << ") " << delta << "\n";
                 }
                 nonZerosCount += fabsf(ours) > 1e-3f;
             }
@@ -234,7 +300,7 @@ void HogProcessor::compareDescriptorsOcl(const uint *mappedDescriptor) const
 //        std::cout << y << ": " << mismatchCount << "\n";
     }
 
-    int channelsTotal = cellCount[0] * cellCount[1] * sensitiveBinCount;
+    int channelsTotal = cellCount[0] * cellCount[1] * binCntPerBlock;
     std::cout << "mismatched: " << mismatchCount << " from: " << channelsTotal
         << ". mismatch ratio: " << (float)mismatchCount / (float)channelsTotal
         << ". nonzeros: " << nonZerosCount << "\n";
@@ -273,15 +339,15 @@ void HogProcessor::processFrame()
     calculateHogPiotr();
     hogProto_.calculate((float*)ocvImageGrayFloat_->data);
     calculateHogOcl();
-    compareDescriptors();
+    compareDescriptors(hogProto_.blockDescriptor_);
 
     QImage qimage(rgbFrame_, captureSettings_.frameWidth_, captureSettings_.frameHeight_,
         captureSettings_.frameWidth_ * 3, QImage::Format_RGB888);
     emit sendFrame(qimage.copy());
 
     const HogSettings &s = hogProto_.settings_;
-    QVector<float> container(s.cellCount_[0] * s.cellCount_[1] * s.channelsPerFeature(), 0.0f);
-    const float *desc = hogProto_.featureDescriptor_; // hogPiotr_;
+    QVector<float> container(s.cellCount_[0] * s.cellCount_[1] * s.channelsPerBlock(), 0.0f);
+    const float *desc = hogProto_.blockDescriptor_; // hogPiotr_;
     qCopy(desc, desc + container.size(), container.begin());
     emit sendHog(container);
 }

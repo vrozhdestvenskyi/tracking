@@ -31,14 +31,18 @@ protected:
     void release();
     void calculateHogOcl();
     void calculateHogPiotr();
-    void compareDescriptors() const;
-    void compareDescriptorsOcl(const uint *mappedDescriptor) const;
+    void compareDescriptors(const float *desc) const;
+    void compareDescriptorsOcl(const float *mappedDescriptor) const;
 
     std::shared_ptr<cv::Mat_<uchar> > ocvImageGray_ = nullptr;
     std::shared_ptr<cv::Mat_<float> > ocvImageGrayFloat_ = nullptr;
     float *hogPiotr_ = nullptr;
     HogProto hogProto_;
-    Hog hog_;
+    CellHog hog_;
+    CellNorm cellNorm_;
+    CellNormSumX cellNormSumX_;
+    InvBlockNorm invBlockNorm_;
+    BlockHog blockHog_;
 };
 
 #endif // HOGPROCESSOR_H
