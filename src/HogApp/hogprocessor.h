@@ -2,6 +2,7 @@
 #define HOGPROCESSOR_H
 
 #include <memory>
+#include <QElapsedTimer>
 #include <hog.h>
 #include <videoprocessor.h>
 
@@ -37,12 +38,18 @@ protected:
     std::shared_ptr<cv::Mat_<uchar> > ocvImageGray_ = nullptr;
     std::shared_ptr<cv::Mat_<float> > ocvImageGrayFloat_ = nullptr;
     float *hogPiotr_ = nullptr;
+    cl_mem oclImage_;
+    DerivsX derivsX_;
+    DerivsY derivsY_;
+    Derivs derivs_;
     HogProto hogProto_;
     CellHog hog_;
     CellNorm cellNorm_;
     CellNormSumX cellNormSumX_;
     InvBlockNorm invBlockNorm_;
     BlockHog blockHog_;
+    QElapsedTimer timer_;
+    quint64 msSum_ = 0;
 };
 
 #endif // HOGPROCESSOR_H

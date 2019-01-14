@@ -15,6 +15,7 @@ HogProcessor::HogProcessor(QObject *parent)
     , hogPiotr_(nullptr)
 {
     kernelPaths_ = { "hog.cl" };
+    timer_.start();
 }
 
 HogProcessor::~HogProcessor()
@@ -24,9 +25,21 @@ HogProcessor::~HogProcessor()
 
 void HogProcessor::release()
 {
+    std::cout << "Mean processing time on " << frameIndex_ << " frames is "
+        << (double)msSum_ / std::max(1, frameIndex_) << "ms\n";
+    blockHog_.release();
+    invBlockNorm_.release();
     cellNormSumX_.release();
     cellNorm_.release();
     hog_.release();
+    derivs_.release();
+    derivsY_.release();
+    derivsX_.release();
+    if (oclImage_)
+    {
+        clReleaseMemObject(oclImage_);
+        oclImage_ = NULL;
+    }
     hogProto_.release();
     if (hogPiotr_)
     {
@@ -48,7 +61,32 @@ void HogProcessor::setupProcessor(const VideoProcessor::CaptureSettings &setting
 
     HogSettings hogSettings(settings.frameWidth_, settings.frameHeight_);
     hogProto_.initialize(hogSettings);
-    if (hog_.initialize(hogSettings, oclContext_, oclProgram_) != CL_SUCCESS)
+    {
+        int bytes = hogSettings.imSize_[0] * hogSettings.imSize_[1] * sizeof(cl_float);
+        oclImage_ = clCreateBuffer(oclContext_, CL_MEM_READ_ONLY, bytes, NULL, NULL);
+        if (!oclImage_)
+        {
+            emitError("Failed to initialize oclImage_");
+            return;
+        }
+    }
+    if (derivsX_.initialize(hogSettings, oclContext_, oclProgram_, oclImage_) != CL_SUCCESS)
+    {
+        emitError("Failed to initialize DerivsX");
+        return;
+    }
+    if (derivsY_.initialize(hogSettings, oclContext_, oclProgram_, oclImage_) != CL_SUCCESS)
+    {
+        emitError("Failed to initialize DerivsY");
+        return;
+    }
+    if (derivs_.initialize(hogSettings, oclContext_, oclProgram_, oclImage_) != CL_SUCCESS)
+    {
+        emitError("Failed to initialize Derivs");
+        return;
+    }
+    if (hog_.initialize(hogSettings, oclContext_, oclProgram_, derivs_.derivsX_,
+            derivs_.derivsY_) != CL_SUCCESS)
     {
         emitError("Failed to initialize CellHog");
         return;
@@ -87,23 +125,49 @@ void HogProcessor::setupProcessor(const VideoProcessor::CaptureSettings &setting
         0, hogSettings.sensitiveBinCount()
 //        hogSettings.sensitiveBinCount(), hogSettings.insensitiveBinCount_
     );
+    msSum_ = 0;
 }
 
 void HogProcessor::calculateHogOcl()
 {
+    timer_.restart();
     cl_event imageWriteEvent = NULL;
     size_t bytes = ocvImageGrayFloat_->rows * ocvImageGrayFloat_->cols * sizeof(cl_float);
-    cl_int status = clEnqueueWriteBuffer(oclQueue_, hog_.image_, CL_FALSE, 0, bytes,
+    cl_int status = clEnqueueWriteBuffer(oclQueue_, oclImage_, CL_FALSE, 0, bytes,
         ocvImageGrayFloat_->data, 0, NULL, &imageWriteEvent);
-    cl_event cellHogEvent = NULL;
+    std::array<cl_event, 3> derivsEvents = { NULL, NULL, NULL };
     if (status == CL_SUCCESS)
     {
-        status = hog_.calculate(oclQueue_, 1, &imageWriteEvent, cellHogEvent);
+        status = derivsX_.calculate(oclQueue_, 1, &imageWriteEvent, derivsEvents[0]);
+//        status = clEnqueueBarrierWithWaitList(oclQueue_, 1, &imageWriteEvent, &derivsXevent);
+    }
+    if (status == CL_SUCCESS)
+    {
+        status = derivsY_.calculate(oclQueue_, 1, &imageWriteEvent, derivsEvents[1]);
+//        status = clEnqueueBarrierWithWaitList(oclQueue_, 1, &imageWriteEvent, &derivsXevent);
+    }
+    if (status == CL_SUCCESS)
+    {
+        status = derivs_.calculate(oclQueue_, 1, &imageWriteEvent, derivsEvents[2]);
+//        status = clEnqueueBarrierWithWaitList(oclQueue_, 1, &imageWriteEvent, &derivsXevent);
     }
     if (imageWriteEvent)
     {
         clReleaseEvent(imageWriteEvent);
         imageWriteEvent = NULL;
+    }
+    cl_event cellHogEvent = NULL;
+    if (status == CL_SUCCESS)
+    {
+        status = hog_.calculate(oclQueue_, derivsEvents.size(), derivsEvents.data(), cellHogEvent);
+    }
+    for (cl_event &event : derivsEvents)
+    {
+        if (event)
+        {
+            clReleaseEvent(event);
+            event = NULL;
+        }
     }
     cl_event cellNormEvent = NULL;
     if (status == CL_SUCCESS)
@@ -153,6 +217,9 @@ void HogProcessor::calculateHogOcl()
         mappedDesc = (cl_float*)clEnqueueMapBuffer(oclQueue_, blockHog_.descriptor_, CL_TRUE,
             CL_MAP_READ, 0, bytes, 1, &blockHogEvent, NULL, &status);
     }
+    quint64 ms = timer_.restart();
+    msSum_ += ms;
+    std::cout << frameIndex_ << ": " << ms << "ms\n";
     if (blockHogEvent)
     {
         clReleaseEvent(blockHogEvent);

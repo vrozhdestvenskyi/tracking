@@ -20,11 +20,15 @@ struct RangedKernel
     size_t ndrangeGlob_[3] = { 0, 0, 0 };
 };
 
-class CellHog
+class DerivsX
 {
 public:
-    ~CellHog();
-    cl_int initialize(const HogSettings &settings, cl_context context, cl_program program);
+    ~DerivsX();
+    cl_int initialize(
+        const HogSettings &settings,
+        cl_context context,
+        cl_program program,
+        cl_mem image);
     void release();
     cl_int calculate(
         cl_command_queue commandQueue,
@@ -32,7 +36,68 @@ public:
         const cl_event *waitList,
         cl_event &event);
 
-    cl_mem image_ = NULL; // TODO remove this
+    cl_mem derivs_ = NULL;
+    RangedKernel kernel_;
+};
+
+class DerivsY
+{
+public:
+    ~DerivsY();
+    cl_int initialize(
+        const HogSettings &settings,
+        cl_context context,
+        cl_program program,
+        cl_mem image);
+    void release();
+    cl_int calculate(
+        cl_command_queue commandQueue,
+        cl_int numWaitEvents,
+        const cl_event *waitList,
+        cl_event &event);
+
+    cl_mem derivs_ = NULL;
+    RangedKernel kernel_;
+};
+
+class Derivs
+{
+public:
+    ~Derivs();
+    cl_int initialize(
+        const HogSettings &settings,
+        cl_context context,
+        cl_program program,
+        cl_mem image);
+    void release();
+    cl_int calculate(
+        cl_command_queue commandQueue,
+        cl_int numWaitEvents,
+        const cl_event *waitList,
+        cl_event &event);
+
+    cl_mem derivsX_ = NULL;
+    cl_mem derivsY_ = NULL;
+    RangedKernel kernel_;
+};
+
+class CellHog
+{
+public:
+    ~CellHog();
+    cl_int initialize(
+        const HogSettings &settings,
+        cl_context context,
+        cl_program program,
+        cl_mem derivsX,
+        cl_mem derivsY);
+    void release();
+    cl_int calculate(
+        cl_command_queue commandQueue,
+        cl_int numWaitEvents,
+        const cl_event *waitList,
+        cl_event &event);
+
     cl_mem descriptor_ = NULL;
     RangedKernel kernel_;
 };

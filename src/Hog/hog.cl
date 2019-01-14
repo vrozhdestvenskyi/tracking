@@ -1,16 +1,154 @@
-inline void calcPartialDerivs2(
-    __local const float* const restrict imLoc,
-    __local float* const restrict derivX,
-    __local float* const restrict derivY,
-    const int2 imLocId,
-    const int2 derivId,
-    const int imLocSzX,
-    const int derivSzX)
+__kernel void calcDerivsX(
+    __global const float* restrict imGlob,
+    __global float* restrict derivs,
+    __local float* restrict imLoc, // column-major
+    const int iterCnt,
+    const int halfPad)
 {
-    const int i = mad24(derivId.y, derivSzX, derivId.x);
-    const int j = mad24(imLocId.y, imLocSzX, imLocId.x);
-    derivX[i] = imLoc[j + 1] - imLoc[j - 1];
-    derivY[i] = imLoc[j + imLocSzX] - imLoc[j - imLocSzX];
+    const int2 wiId = (int2)(get_local_id(1), get_local_id(0));
+    const int2 wgSz = (int2)(get_local_size(1), get_local_size(0));
+    const int imGlobSzX = mul24(wgSz.x, iterCnt);
+    const int copyId = ((wiId.x < 2 ? wgSz.x : 0) - 1) * wgSz.y;
+
+    {
+        const int wiIdYglob = get_global_id(0);
+        imGlob += mad24(wiIdYglob, imGlobSzX, wiId.x);
+        derivs += mad24(wiIdYglob + halfPad, imGlobSzX + 2 * halfPad, wiId.x + halfPad);
+        imLoc += mad24(wiId.x + 1, wgSz.y, wiId.y);
+        imLoc[-wgSz.y] = imGlob[wiId.x > 0 ? -1 : 0];
+    }
+
+    int shiftGlob = 0;
+    for (int iter = 0; iter + 1 < iterCnt; ++iter, shiftGlob += wgSz.x)
+    {
+        barrier(CLK_LOCAL_MEM_FENCE);
+        imLoc[wgSz.y] = imGlob[shiftGlob + 1];
+        barrier(CLK_LOCAL_MEM_FENCE);
+        derivs[shiftGlob] = imLoc[wgSz.y] - imLoc[-wgSz.y];
+        barrier(CLK_LOCAL_MEM_FENCE); // TODO remove this
+        imLoc[-wgSz.y] = imLoc[copyId];
+    }
+
+    barrier(CLK_LOCAL_MEM_FENCE);
+    imLoc[wgSz.y] = imGlob[shiftGlob + (wiId.x + 1 < wgSz.x)];
+    barrier(CLK_LOCAL_MEM_FENCE);
+    derivs[shiftGlob] = imLoc[wgSz.y] - imLoc[-wgSz.y];
+}
+
+__kernel void calcDerivsY(
+    __global const float* restrict imGlob,
+    __global float* restrict derivs,
+    __local float* restrict imLoc,
+    const int iterCnt,
+    const int halfPad)
+{
+    const int2 wiId = (int2)(get_local_id(0), get_local_id(1));
+    const int2 wgSz = (int2)(get_local_size(0), get_local_size(1));
+    const int imGlobSzX = get_global_size(0);
+    const int imGlobIterStep = mul24(wgSz.y, imGlobSzX);
+    const int derivsIterStep = mul24(wgSz.y, imGlobSzX + 2 * halfPad);
+    const int copyId = ((wiId.y < 2 ? wgSz.x : 0) - 1) * wgSz.x;
+
+    {
+        const int wiIdXglob = get_global_id(0);
+        imGlob += mad24(wiId.y, imGlobSzX, wiIdXglob);
+        derivs += mad24(wiId.y + halfPad, imGlobSzX + 2 * halfPad, wiIdXglob + halfPad);
+        imLoc += mad24(wiId.y + 1, wgSz.x, wiId.x);
+        imLoc[-wgSz.x] = imGlob[wiId.y > 0 ? -imGlobSzX : 0];
+    }
+
+    int imGlobShift, derivsShift = 0;
+    for (int iter = 0; iter + 1 < iterCnt;
+         ++iter, imGlobShift += imGlobIterStep, derivsShift += derivsIterStep)
+    {
+        barrier(CLK_LOCAL_MEM_FENCE);
+        imLoc[wgSz.x] = imGlob[imGlobShift + imGlobSzX];
+        barrier(CLK_LOCAL_MEM_FENCE);
+        derivs[derivsShift] = imLoc[wgSz.x] - imLoc[-wgSz.x];
+        barrier(CLK_LOCAL_MEM_FENCE); // TODO remove this
+        imLoc[-wgSz.x] = imLoc[copyId];
+    }
+
+    barrier(CLK_LOCAL_MEM_FENCE);
+    imLoc[wgSz.x] = imGlob[imGlobShift + ((wiId.y + 1) < wgSz.y ? imGlobSzX : 0)];
+    barrier(CLK_LOCAL_MEM_FENCE);
+    derivs[derivsShift] = imLoc[wgSz.x] - imLoc[-wgSz.x];
+}
+
+inline void calcDerivsInl(
+    __local const float* const restrict im,
+    __global float* const restrict derivX,
+    __global float* const restrict derivY,
+    const int derivId,
+    const int imSzX)
+{
+    derivX[derivId] = im[1] - im[-1];
+    derivY[derivId] = im[imSzX] - im[-imSzX];
+}
+
+__kernel void calcDerivs(
+    __global const float* const restrict imGlob,
+    __global float* const restrict derivsX,
+    __global float* const restrict derivsY,
+    __local float* const restrict imLoc,
+    const int iterCnt,
+    const int halfPad)
+{
+    const int2 wiId = (int2)(get_local_id(0), get_local_id(1));
+    const int2 wgSz = (int2)(get_local_size(0), get_local_size(1));
+    const int2 imLocSz = wgSz + 2;
+    const int2 imGlobSz = (int2)(get_global_size(0), mul24(wgSz.y, iterCnt));
+    const int derivsSzX = imGlobSz.x + 2 * halfPad;
+    const int derivIdLoc = mad24(wiId.y + 1, imLocSz.x, wiId.x + 1);
+    const int imGlobIterStep = mul24(wgSz.y, imGlobSz.x);
+    const int derivsIterStep = mul24(wgSz.y, derivsSzX);
+
+    int derivsShift = mad24(wiId.y + halfPad, derivsSzX, (int)get_global_id(0) + halfPad);
+    int srcIdLoc[2];
+    int srcIdGlob[2];
+    {
+        const int wiIdLin = mad24(wiId.y, wgSz.x, wiId.x);
+        const int wgSzLin = mul24(wgSz.x, wgSz.y);
+        const int imLocSzLin = mul24(imLocSz.x, imLocSz.y);
+        const int wgShiftX = mul24((int)get_group_id(0), wgSz.x);
+        #pragma unroll 2
+        for (int i = 0; i < 2; ++i)
+        {
+            srcIdLoc[i] = (wiIdLin + mul24(i, wgSzLin)) % imLocSzLin;
+            srcIdGlob[i] = mad24(srcIdLoc[i] / imLocSz.x - 1, imGlobSz.x,
+                clamp(srcIdLoc[i] % imLocSz.x + wgShiftX - 1, 0, imGlobSz.x - 1));
+        }
+    }
+
+    #pragma unroll 2
+    for (int i = 0; i < 2; ++i)
+    {
+        imLoc[srcIdLoc[i]] = imGlob[srcIdGlob[i] + (srcIdGlob[i] >= 0 ? 0 : imGlobSz.x)];
+        srcIdGlob[i] += imGlobIterStep;
+    }
+    barrier(CLK_LOCAL_MEM_FENCE);
+    calcDerivsInl(imLoc + derivIdLoc, derivsX, derivsY, derivsShift, imLocSz.x);
+    derivsShift += derivsIterStep;
+    barrier(CLK_LOCAL_MEM_FENCE);
+
+    for (int iter = 1; iter + 1 < iterCnt; ++iter, derivsShift += derivsIterStep)
+    {
+        #pragma unroll 2
+        for (int i = 0; i < 2; ++i)
+        {
+            imLoc[srcIdLoc[i]] = imGlob[srcIdGlob[i]];
+            srcIdGlob[i] += imGlobIterStep;
+        }
+        barrier(CLK_LOCAL_MEM_FENCE);
+        calcDerivsInl(imLoc + derivIdLoc, derivsX, derivsY, derivsShift, imLocSz.x);
+        barrier(CLK_LOCAL_MEM_FENCE);
+    }
+
+    imLoc[srcIdLoc[0]] = imGlob[srcIdGlob[0]];
+    imLoc[srcIdLoc[1]] = imGlob[srcIdGlob[1] -
+        (srcIdGlob[1] < mul24(imGlobSz.x, imGlobSz.y) ? 0 : imGlobSz.x)];
+    barrier(CLK_LOCAL_MEM_FENCE);
+    calcDerivsInl(imLoc + derivIdLoc, derivsX, derivsY, derivsShift, imLocSz.x);
 }
 
 inline int calcOutBinGlob(
@@ -30,11 +168,11 @@ inline int calcOutBinGlob(
 }
 
 __kernel void calcCellDesc(
-    __global const float* const restrict imGlob,
+    __global const float* restrict derivsXglob,
+    __global const float* restrict derivsYglob,
     __global uint* const restrict cellDescGlob,
-    __local float* const restrict imLoc,
-    __local float* const restrict derivX,
-    __local float* const restrict derivY,
+    __local float* const restrict derivsXloc,
+    __local float* const restrict derivsYloc,
     __local uint* const restrict cellDescLoc,
     const int iterCnt,
     const int cellSz,
@@ -45,44 +183,24 @@ __kernel void calcCellDesc(
     const int2 wgSz = (int2)(get_local_size(0), get_local_size(1));
     const int wiIdLin = mad24(wiId.y, wgSz.x, wiId.x);
     const int wgSzLin = mul24(wgSz.x, wgSz.y);
-    const int2 imGlobSz = (int2)(mul24(wgSz.x, iterCnt), get_global_size(1)) + 2 * halfPad;
-    // TODO reduce bank conflicts
-    const int2 imLocSz = wgSz + (int2)(0, cellSz) + 2;
-    const int2 derivSz = wgSz + cellSz;
+    const int2 imGlobSz = (int2)(mul24(iterCnt, wgSz.x), (int)get_global_size(1)) + 2 * halfPad;
+    const int2 derivsSzGlob = imGlobSz + cellSz;
+    const int2 derivsSzLoc = wgSz + cellSz;
     const int halfCellSz = cellSz / 2;
 
-    // Load data and calculate partial derivatives for the very first image block. This
-    // block differs from anothers because the leftmost part of the global image does not
-    // exist.
+    int srcIdLoc[2];
+    int srcIdGlob[2];
     {
-        const int2 imLocId = (int2)(wiIdLin / imLocSz.y, wiIdLin % imLocSz.y);
-        const int2 imGlobId = imLocId + (int2)(0, mul24((int)get_group_id(1), wgSz.y)) +
-            halfPad - halfCellSz - 1;
-        // TODO: when cellSz is 8, not all pixels will be loaded!
-        imLoc[mad24(imLocId.y, imLocSz.x, imLocId.x)] =
-            imGlob[mad24(imGlobId.y, imGlobSz.x, imGlobId.x)];
-
-        barrier(CLK_LOCAL_MEM_FENCE);
-        calcPartialDerivs2(imLoc, derivX, derivY, imLocId + 1, imLocId, imLocSz.x, derivSz.x);
-
-        barrier(CLK_LOCAL_MEM_FENCE);
-        const int i = mad24(imLocId.y, imLocSz.x, imLocId.x);
-        imLoc[i] = imLoc[i + (imLocId.x < 2 ? cellSz : 0)];
+        const int derivsSzLocLin = mul24(derivsSzLoc.x, derivsSzLoc.y);
+        const int wgShiftY = mul24((int)get_group_id(1), wgSz.y);
+        #pragma unroll 2
+        for (int i = 0; i < 2; ++i)
+        {
+            srcIdLoc[i] = (wiIdLin + mul24(i, wgSzLin)) % derivsSzLocLin;
+            srcIdGlob[i] = mad24(srcIdLoc[i] / derivsSzLoc.x + wgShiftY + halfPad.y,
+                derivsSzGlob.x, srcIdLoc[i] % derivsSzLoc.x + halfPad.x);
+        }
     }
-
-    const int2 imGlobId = halfPad + (int2)(wiId.x + halfCellSz + 1, get_global_id(1));
-    const int2 imLocId = wiId + (int2)(0, halfCellSz) + 1;
-    const int2 derivId = wiId + (int2)(cellSz, halfCellSz);
-    const int load2dir = (wiId.y < halfCellSz + 1) ? -1 : (
-        (wiId.y >= wgSz.y - halfCellSz - 1) ? 1 : 0);
-    __local float* const locLoad = imLoc + mad24(imLocId.y, imLocSz.x, imLocId.x + 1);
-    __local float* const locLoad2 = locLoad + mul24(load2dir, mul24(halfCellSz + 1, imLocSz.x));
-    __global const float* const globLoad = imGlob + mad24(imGlobId.y, imGlobSz.x, imGlobId.x);
-    __global const float* const globLoad2 = globLoad +
-        mul24(load2dir, mul24(halfCellSz + 1, imGlobSz.x));
-    const int deriv2dir = wiId.y < halfCellSz ? -1 : ((wiId.y >= wgSz.y - halfCellSz) ? 1 : 0);
-    const int2 imLocId2 = imLocId + deriv2dir * (int2)(0, halfCellSz);
-    const int2 derivId2 = derivId + deriv2dir * (int2)(0, halfCellSz);
 
     const int2 neighborId = wiId % cellSz;
     const int2 cellCntLoc = wgSz / cellSz;
@@ -97,7 +215,7 @@ __kernel void calcCellDesc(
     for (int i = 0; i < 4; ++i)
     {
         const int2 adjacent = mul24((int2)(i % 2, i / 2), cellSz);
-        derivIdsLin[i] = mad24(wiId.y + adjacent.y, derivSz.x, wiId.x + adjacent.x);
+        derivIdsLin[i] = mad24(wiId.y + adjacent.y, derivsSzLoc.x, wiId.x + adjacent.x);
         const float2 dist = fabs(convert_float2(cellSz - neighborId - adjacent) - 0.5f);
         const float2 weight = 1.0f - half_divide(dist, cellSz);
         interpCellWeights[i] = weight.x * weight.y * accuracy;
@@ -112,34 +230,24 @@ __kernel void calcCellDesc(
     __global uint* const dstChnlGlob2 = !hasChnl2 ? dstChnlGlob : (cellDescGlob + calcOutBinGlob(
         wiIdLin + wgSzLin, binsPerCell, cellSz, cellCntLoc, imGlobSz.x, halfPad.x));
 
-    const int2 derivIdCopy = (int2)(wiIdLin % cellSz, wiIdLin / cellSz);
-    const int2 imLocIdCopy = (int2)(wiIdLin % 2, wiIdLin / 2);
-    __local float* const copyIm = imLoc + mad24(imLocIdCopy.y, imLocSz.x, imLocIdCopy.x);
-    __local float* const copyX = derivX + mad24(derivIdCopy.y, derivSz.x, derivIdCopy.x);
-    __local float* const copyY = derivY + mad24(derivIdCopy.y, derivSz.x, derivIdCopy.x);
-
     for (int iter = 0; iter < iterCnt; ++iter)
     {
-        // Here we assume that the leftmost parts of the both local image and partial
-        // derivatives have been already loaded, so we have to load the rest of data,
-        // calculate the rest of derivatives and finally calculate the descriptor for
-        // all the cells which are covered by current iteration
-        barrier(CLK_LOCAL_MEM_FENCE);
-        int tmpId = mul24(iter, wgSz.x);
-        *locLoad = globLoad[tmpId];
-        *locLoad2 = globLoad2[tmpId];
-
-        barrier(CLK_LOCAL_MEM_FENCE);
-        calcPartialDerivs2(imLoc, derivX, derivY, imLocId, derivId, imLocSz.x, derivSz.x);
-        calcPartialDerivs2(imLoc, derivX, derivY, imLocId2, derivId2, imLocSz.x, derivSz.x);
+        #pragma unroll 2
+        for (int i = 0; i < 2; ++i)
+        {
+            derivsXloc[srcIdLoc[i]] = derivsXglob[srcIdGlob[i]];
+            derivsYloc[srcIdLoc[i]] = derivsYglob[srcIdGlob[i]];
+            srcIdGlob[i] += wgSz.x;
+        }
         cellDescLoc[wiIdLin] = 0;
         cellDescLoc[wiIdLin + wgSzLin] = 0;
-
         barrier(CLK_LOCAL_MEM_FENCE);
+
         #pragma unroll 4
         for (int i = 0; i < 4; ++i)
         {
-            const float2 grad = (float2)(derivX[derivIdsLin[i]], derivY[derivIdsLin[i]]);
+            const float2 grad = (float2)(
+                derivsXloc[derivIdsLin[i]], derivsYloc[derivIdsLin[i]]);
             const float mag = fast_length(grad) * interpCellWeights[i];
             const float ang = atan2pi(grad.y, grad.x) * 0.5f;
             const float bin = (float)binsPerCell * (ang + (float)(ang < 0.0f));
@@ -153,22 +261,12 @@ __kernel void calcCellDesc(
             atomic_add(dstCellLoc + interpBins.s0, convert_uint_sat(mag * interpBinWeights.s0));
             atomic_add(dstCellLoc + interpBins.s1, convert_uint_sat(mag * interpBinWeights.s1));
         }
-
         barrier(CLK_LOCAL_MEM_FENCE);
-        tmpId = mul24(mul24(iter, cellCntLoc.x), binsPerCell);
+
+        const int tmpId = mul24(mul24(iter, cellCntLoc.x), binsPerCell);
         dstChnlGlob[tmpId] = *dstChnlLoc;
         dstChnlGlob2[tmpId] = *dstChnlLoc2;
-
-        // Prepare to the next iteration: copy parts of local image and its derivatives
-        if (derivIdCopy.y < derivSz.y)
-        {
-            *copyX = copyX[wgSz.x];
-            *copyY = copyY[wgSz.x];
-        }
-        if (imLocIdCopy.y < imLocSz.y)
-        {
-            *copyIm = copyIm[wgSz.x];
-        }
+        barrier(CLK_LOCAL_MEM_FENCE);
     }
 }
 
