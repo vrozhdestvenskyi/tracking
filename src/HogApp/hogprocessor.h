@@ -39,8 +39,6 @@ protected:
     std::shared_ptr<cv::Mat_<float> > ocvImageGrayFloat_ = nullptr;
     float *hogPiotr_ = nullptr;
     cl_mem oclImage_;
-    DerivsX derivsX_;
-    DerivsY derivsY_;
     Derivs derivs_;
     HogProto hogProto_;
     CellHog hog_;

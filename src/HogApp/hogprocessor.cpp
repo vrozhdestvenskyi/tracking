@@ -33,8 +33,6 @@ void HogProcessor::release()
     cellNorm_.release();
     hog_.release();
     derivs_.release();
-    derivsY_.release();
-    derivsX_.release();
     if (oclImage_)
     {
         clReleaseMemObject(oclImage_);
@@ -69,16 +67,6 @@ void HogProcessor::setupProcessor(const VideoProcessor::CaptureSettings &setting
             emitError("Failed to initialize oclImage_");
             return;
         }
-    }
-    if (derivsX_.initialize(hogSettings, oclContext_, oclProgram_, oclImage_) != CL_SUCCESS)
-    {
-        emitError("Failed to initialize DerivsX");
-        return;
-    }
-    if (derivsY_.initialize(hogSettings, oclContext_, oclProgram_, oclImage_) != CL_SUCCESS)
-    {
-        emitError("Failed to initialize DerivsY");
-        return;
     }
     if (derivs_.initialize(hogSettings, oclContext_, oclProgram_, oclImage_) != CL_SUCCESS)
     {
@@ -135,21 +123,10 @@ void HogProcessor::calculateHogOcl()
     size_t bytes = ocvImageGrayFloat_->rows * ocvImageGrayFloat_->cols * sizeof(cl_float);
     cl_int status = clEnqueueWriteBuffer(oclQueue_, oclImage_, CL_FALSE, 0, bytes,
         ocvImageGrayFloat_->data, 0, NULL, &imageWriteEvent);
-    std::array<cl_event, 3> derivsEvents = { NULL, NULL, NULL };
+    cl_event derivsEvent = NULL;
     if (status == CL_SUCCESS)
     {
-        status = derivsX_.calculate(oclQueue_, 1, &imageWriteEvent, derivsEvents[0]);
-//        status = clEnqueueBarrierWithWaitList(oclQueue_, 1, &imageWriteEvent, &derivsXevent);
-    }
-    if (status == CL_SUCCESS)
-    {
-        status = derivsY_.calculate(oclQueue_, 1, &imageWriteEvent, derivsEvents[1]);
-//        status = clEnqueueBarrierWithWaitList(oclQueue_, 1, &imageWriteEvent, &derivsXevent);
-    }
-    if (status == CL_SUCCESS)
-    {
-        status = derivs_.calculate(oclQueue_, 1, &imageWriteEvent, derivsEvents[2]);
-//        status = clEnqueueBarrierWithWaitList(oclQueue_, 1, &imageWriteEvent, &derivsXevent);
+        status = derivs_.calculate(oclQueue_, 1, &imageWriteEvent, derivsEvent);
     }
     if (imageWriteEvent)
     {
@@ -159,15 +136,12 @@ void HogProcessor::calculateHogOcl()
     cl_event cellHogEvent = NULL;
     if (status == CL_SUCCESS)
     {
-        status = hog_.calculate(oclQueue_, derivsEvents.size(), derivsEvents.data(), cellHogEvent);
+        status = hog_.calculate(oclQueue_, 1, &derivsEvent, cellHogEvent);
     }
-    for (cl_event &event : derivsEvents)
+    if (derivsEvent)
     {
-        if (event)
-        {
-            clReleaseEvent(event);
-            event = NULL;
-        }
+        clReleaseEvent(derivsEvent);
+        derivsEvent = NULL;
     }
     cl_event cellNormEvent = NULL;
     if (status == CL_SUCCESS)

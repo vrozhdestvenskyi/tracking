@@ -20,46 +20,6 @@ struct RangedKernel
     size_t ndrangeGlob_[3] = { 0, 0, 0 };
 };
 
-class DerivsX
-{
-public:
-    ~DerivsX();
-    cl_int initialize(
-        const HogSettings &settings,
-        cl_context context,
-        cl_program program,
-        cl_mem image);
-    void release();
-    cl_int calculate(
-        cl_command_queue commandQueue,
-        cl_int numWaitEvents,
-        const cl_event *waitList,
-        cl_event &event);
-
-    cl_mem derivs_ = NULL;
-    RangedKernel kernel_;
-};
-
-class DerivsY
-{
-public:
-    ~DerivsY();
-    cl_int initialize(
-        const HogSettings &settings,
-        cl_context context,
-        cl_program program,
-        cl_mem image);
-    void release();
-    cl_int calculate(
-        cl_command_queue commandQueue,
-        cl_int numWaitEvents,
-        const cl_event *waitList,
-        cl_event &event);
-
-    cl_mem derivs_ = NULL;
-    RangedKernel kernel_;
-};
-
 class Derivs
 {
 public:

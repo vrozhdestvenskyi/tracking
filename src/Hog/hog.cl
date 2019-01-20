@@ -1,89 +1,25 @@
-__kernel void calcDerivsX(
-    __global const float* restrict imGlob,
-    __global float* restrict derivs,
-    __local float* restrict imLoc, // column-major
-    const int iterCnt,
-    const int halfPad)
-{
-    const int2 wiId = (int2)(get_local_id(1), get_local_id(0));
-    const int2 wgSz = (int2)(get_local_size(1), get_local_size(0));
-    const int imGlobSzX = mul24(wgSz.x, iterCnt);
-    const int copyId = ((wiId.x < 2 ? wgSz.x : 0) - 1) * wgSz.y;
+#define SENS_BINS 18
+#define BINS_PER_BLOCK 31
 
-    {
-        const int wiIdYglob = get_global_id(0);
-        imGlob += mad24(wiIdYglob, imGlobSzX, wiId.x);
-        derivs += mad24(wiIdYglob + halfPad, imGlobSzX + 2 * halfPad, wiId.x + halfPad);
-        imLoc += mad24(wiId.x + 1, wgSz.y, wiId.y);
-        imLoc[-wgSz.y] = imGlob[wiId.x > 0 ? -1 : 0];
-    }
+#define TRUNC 0.2f
 
-    int shiftGlob = 0;
-    for (int iter = 0; iter + 1 < iterCnt; ++iter, shiftGlob += wgSz.x)
-    {
-        barrier(CLK_LOCAL_MEM_FENCE);
-        imLoc[wgSz.y] = imGlob[shiftGlob + 1];
-        barrier(CLK_LOCAL_MEM_FENCE);
-        derivs[shiftGlob] = imLoc[wgSz.y] - imLoc[-wgSz.y];
-        barrier(CLK_LOCAL_MEM_FENCE); // TODO remove this
-        imLoc[-wgSz.y] = imLoc[copyId];
-    }
+#define HOG_WG_SZ_BIG 16
+#define HOG_WG_SZ_BIG_LIN 256
 
-    barrier(CLK_LOCAL_MEM_FENCE);
-    imLoc[wgSz.y] = imGlob[shiftGlob + (wiId.x + 1 < wgSz.x)];
-    barrier(CLK_LOCAL_MEM_FENCE);
-    derivs[shiftGlob] = imLoc[wgSz.y] - imLoc[-wgSz.y];
-}
+#define HOG_IM_LOC_SZ 18
+#define HOG_IM_LOC_SZ_LIN 324
 
-__kernel void calcDerivsY(
-    __global const float* restrict imGlob,
-    __global float* restrict derivs,
-    __local float* restrict imLoc,
-    const int iterCnt,
-    const int halfPad)
-{
-    const int2 wiId = (int2)(get_local_id(0), get_local_id(1));
-    const int2 wgSz = (int2)(get_local_size(0), get_local_size(1));
-    const int imGlobSzX = get_global_size(0);
-    const int imGlobIterStep = mul24(wgSz.y, imGlobSzX);
-    const int derivsIterStep = mul24(wgSz.y, imGlobSzX + 2 * halfPad);
-    const int copyId = ((wiId.y < 2 ? wgSz.x : 0) - 1) * wgSz.x;
-
-    {
-        const int wiIdXglob = get_global_id(0);
-        imGlob += mad24(wiId.y, imGlobSzX, wiIdXglob);
-        derivs += mad24(wiId.y + halfPad, imGlobSzX + 2 * halfPad, wiIdXglob + halfPad);
-        imLoc += mad24(wiId.y + 1, wgSz.x, wiId.x);
-        imLoc[-wgSz.x] = imGlob[wiId.y > 0 ? -imGlobSzX : 0];
-    }
-
-    int imGlobShift, derivsShift = 0;
-    for (int iter = 0; iter + 1 < iterCnt;
-         ++iter, imGlobShift += imGlobIterStep, derivsShift += derivsIterStep)
-    {
-        barrier(CLK_LOCAL_MEM_FENCE);
-        imLoc[wgSz.x] = imGlob[imGlobShift + imGlobSzX];
-        barrier(CLK_LOCAL_MEM_FENCE);
-        derivs[derivsShift] = imLoc[wgSz.x] - imLoc[-wgSz.x];
-        barrier(CLK_LOCAL_MEM_FENCE); // TODO remove this
-        imLoc[-wgSz.x] = imLoc[copyId];
-    }
-
-    barrier(CLK_LOCAL_MEM_FENCE);
-    imLoc[wgSz.x] = imGlob[imGlobShift + ((wiId.y + 1) < wgSz.y ? imGlobSzX : 0)];
-    barrier(CLK_LOCAL_MEM_FENCE);
-    derivs[derivsShift] = imLoc[wgSz.x] - imLoc[-wgSz.x];
-}
+#define HOG_WG_SZ_SMALL 4
+#define HOG_WG_SZ_SMALL_LIN 16
 
 inline void calcDerivsInl(
     __local const float* const restrict im,
     __global float* const restrict derivX,
     __global float* const restrict derivY,
-    const int derivId,
-    const int imSzX)
+    const int derivId)
 {
     derivX[derivId] = im[1] - im[-1];
-    derivY[derivId] = im[imSzX] - im[-imSzX];
+    derivY[derivId] = im[HOG_IM_LOC_SZ] - im[-HOG_IM_LOC_SZ];
 }
 
 __kernel void calcDerivs(
@@ -95,28 +31,24 @@ __kernel void calcDerivs(
     const int halfPad)
 {
     const int2 wiId = (int2)(get_local_id(0), get_local_id(1));
-    const int2 wgSz = (int2)(get_local_size(0), get_local_size(1));
-    const int2 imLocSz = wgSz + 2;
-    const int2 imGlobSz = (int2)(get_global_size(0), mul24(wgSz.y, iterCnt));
+    const int2 imGlobSz = (int2)(get_global_size(0), mul24((int)HOG_WG_SZ_BIG, iterCnt));
     const int derivsSzX = imGlobSz.x + 2 * halfPad;
-    const int derivIdLoc = mad24(wiId.y + 1, imLocSz.x, wiId.x + 1);
-    const int imGlobIterStep = mul24(wgSz.y, imGlobSz.x);
-    const int derivsIterStep = mul24(wgSz.y, derivsSzX);
+    const int derivIdLoc = mad24(wiId.y + 1, HOG_IM_LOC_SZ, wiId.x + 1);
+    const int imGlobIterStep = mul24((int)HOG_WG_SZ_BIG, imGlobSz.x);
+    const int derivsIterStep = mul24((int)HOG_WG_SZ_BIG, derivsSzX);
 
     int derivsShift = mad24(wiId.y + halfPad, derivsSzX, (int)get_global_id(0) + halfPad);
     int srcIdLoc[2];
     int srcIdGlob[2];
     {
-        const int wiIdLin = mad24(wiId.y, wgSz.x, wiId.x);
-        const int wgSzLin = mul24(wgSz.x, wgSz.y);
-        const int imLocSzLin = mul24(imLocSz.x, imLocSz.y);
-        const int wgShiftX = mul24((int)get_group_id(0), wgSz.x);
+        const int wiIdLin = mad24(wiId.y, (int)HOG_WG_SZ_BIG, wiId.x);
+        const int wgShiftX = mul24((int)get_group_id(0), (int)HOG_WG_SZ_BIG);
         #pragma unroll 2
         for (int i = 0; i < 2; ++i)
         {
-            srcIdLoc[i] = (wiIdLin + mul24(i, wgSzLin)) % imLocSzLin;
-            srcIdGlob[i] = mad24(srcIdLoc[i] / imLocSz.x - 1, imGlobSz.x,
-                clamp(srcIdLoc[i] % imLocSz.x + wgShiftX - 1, 0, imGlobSz.x - 1));
+            srcIdLoc[i] = (wiIdLin + mul24(i, (int)HOG_WG_SZ_BIG_LIN)) % HOG_IM_LOC_SZ_LIN;
+            srcIdGlob[i] = mad24(srcIdLoc[i] / HOG_IM_LOC_SZ - 1, imGlobSz.x,
+                clamp(srcIdLoc[i] % HOG_IM_LOC_SZ + wgShiftX - 1, 0, imGlobSz.x - 1));
         }
     }
 
@@ -127,7 +59,7 @@ __kernel void calcDerivs(
         srcIdGlob[i] += imGlobIterStep;
     }
     barrier(CLK_LOCAL_MEM_FENCE);
-    calcDerivsInl(imLoc + derivIdLoc, derivsX, derivsY, derivsShift, imLocSz.x);
+    calcDerivsInl(imLoc + derivIdLoc, derivsX, derivsY, derivsShift);
     derivsShift += derivsIterStep;
     barrier(CLK_LOCAL_MEM_FENCE);
 
@@ -140,7 +72,7 @@ __kernel void calcDerivs(
             srcIdGlob[i] += imGlobIterStep;
         }
         barrier(CLK_LOCAL_MEM_FENCE);
-        calcDerivsInl(imLoc + derivIdLoc, derivsX, derivsY, derivsShift, imLocSz.x);
+        calcDerivsInl(imLoc + derivIdLoc, derivsX, derivsY, derivsShift);
         barrier(CLK_LOCAL_MEM_FENCE);
     }
 
@@ -148,23 +80,7 @@ __kernel void calcDerivs(
     imLoc[srcIdLoc[1]] = imGlob[srcIdGlob[1] -
         (srcIdGlob[1] < mul24(imGlobSz.x, imGlobSz.y) ? 0 : imGlobSz.x)];
     barrier(CLK_LOCAL_MEM_FENCE);
-    calcDerivsInl(imLoc + derivIdLoc, derivsX, derivsY, derivsShift, imLocSz.x);
-}
-
-inline int calcOutBinGlob(
-    const int wiIdLin,
-    const int binsPerCell,
-    const int cellSz,
-    const int2 cellCntLoc,
-    const int imGlobSzX,
-    const int halfPadX)
-{
-    const int cellIdLocLin = wiIdLin / binsPerCell;
-    const int binIdLoc = wiIdLin % binsPerCell;
-    const int2 cellIdLoc = (int2)(cellIdLocLin % cellCntLoc.x, cellIdLocLin / cellCntLoc.x);
-    const int2 cellIdGlob = mad24((int2)(0, get_group_id(1)), cellCntLoc, cellIdLoc);
-    const int cellCntGlobX = (imGlobSzX - 2 * halfPadX) / cellSz;
-    return mad24(mad24(cellIdGlob.y, cellCntGlobX, cellIdGlob.x), binsPerCell, binIdLoc);
+    calcDerivsInl(imLoc + derivIdLoc, derivsX, derivsY, derivsShift);
 }
 
 __kernel void calcCellDesc(
@@ -176,59 +92,66 @@ __kernel void calcCellDesc(
     __local uint* const restrict cellDescLoc,
     const int iterCnt,
     const int cellSz,
-    const int binsPerCell,
     const int2 halfPad)
 {
     const int2 wiId = (int2)(get_local_id(0), get_local_id(1));
-    const int2 wgSz = (int2)(get_local_size(0), get_local_size(1));
-    const int wiIdLin = mad24(wiId.y, wgSz.x, wiId.x);
-    const int wgSzLin = mul24(wgSz.x, wgSz.y);
-    const int2 imGlobSz = (int2)(mul24(iterCnt, wgSz.x), (int)get_global_size(1)) + 2 * halfPad;
-    const int2 derivsSzGlob = imGlobSz + cellSz;
-    const int2 derivsSzLoc = wgSz + cellSz;
-    const int halfCellSz = cellSz / 2;
+    const int derivsSzLoc = HOG_WG_SZ_BIG + cellSz;
+    const int wiIdLin = mad24(wiId.y, (int)HOG_WG_SZ_BIG, wiId.x);
+    const int imGlobSzX = get_global_size(0) + 2 * halfPad.x;
+    const int derivsSzGlobX = imGlobSzX + cellSz;
 
+    const int derivsPerIter = mul24((int)HOG_WG_SZ_BIG, derivsSzGlobX);
     int srcIdLoc[2];
     int srcIdGlob[2];
     {
-        const int derivsSzLocLin = mul24(derivsSzLoc.x, derivsSzLoc.y);
-        const int wgShiftY = mul24((int)get_group_id(1), wgSz.y);
+        const int derivsSzLocLin = mul24(derivsSzLoc, derivsSzLoc);
+        const int wgShiftX = mul24((int)get_group_id(0), (int)HOG_WG_SZ_BIG);
         #pragma unroll 2
         for (int i = 0; i < 2; ++i)
         {
-            srcIdLoc[i] = (wiIdLin + mul24(i, wgSzLin)) % derivsSzLocLin;
-            srcIdGlob[i] = mad24(srcIdLoc[i] / derivsSzLoc.x + wgShiftY + halfPad.y,
-                derivsSzGlob.x, srcIdLoc[i] % derivsSzLoc.x + halfPad.x);
+            srcIdLoc[i] = mad24(i, (int)HOG_WG_SZ_BIG_LIN, wiIdLin) % derivsSzLocLin;
+            srcIdGlob[i] = mad24(srcIdLoc[i] / derivsSzLoc + halfPad.y, derivsSzGlobX,
+                srcIdLoc[i] % derivsSzLoc + wgShiftX + halfPad.x);
         }
     }
 
-    const int2 neighborId = wiId % cellSz;
-    const int2 cellCntLoc = wgSz / cellSz;
-    const int2 cellIdLoc = (int2)(wiId.x / cellSz, wiId.y / cellSz);
-    __local uint* const dstCellLoc = cellDescLoc +
-        mul24(mad24(cellIdLoc.y, cellCntLoc.x, cellIdLoc.x), binsPerCell);
-    const float accuracy = 1e6f;
+    const int2 cellCntLoc = HOG_WG_SZ_BIG / cellSz;
+    const int2 cellIdLoc = wiId / cellSz;
+    const int interpCellId = mul24(mad24(cellIdLoc.y, cellCntLoc.x, cellIdLoc.x), (int)SENS_BINS);
 
     int derivIdsLin[4];
     float interpCellWeights[4];
-    #pragma unroll 4
-    for (int i = 0; i < 4; ++i)
     {
-        const int2 adjacent = mul24((int2)(i % 2, i / 2), cellSz);
-        derivIdsLin[i] = mad24(wiId.y + adjacent.y, derivsSzLoc.x, wiId.x + adjacent.x);
-        const float2 dist = fabs(convert_float2(cellSz - neighborId - adjacent) - 0.5f);
-        const float2 weight = 1.0f - half_divide(dist, cellSz);
-        interpCellWeights[i] = weight.x * weight.y * accuracy;
+        const int2 neighbId = cellSz - wiId % cellSz;
+        #pragma unroll 4
+        for (int i = 0; i < 4; ++i)
+        {
+            const int2 adjacent = mul24((int2)(i % 2, i / 2), cellSz);
+            derivIdsLin[i] = mad24(wiId.y + adjacent.y, derivsSzLoc, wiId.x + adjacent.x);
+            const float2 dist = fabs(convert_float2(neighbId - adjacent) - 0.5f);
+            const float2 weight = 1.0f - half_divide(dist, cellSz);
+            interpCellWeights[i] = weight.x * weight.y * 1e6f;
+        }
     }
 
-    const int hasChnl2 = wiIdLin + wgSzLin <
-        mul24(mul24(cellCntLoc.x, cellCntLoc.y), binsPerCell);
-    __local const uint* const dstChnlLoc = cellDescLoc + wiIdLin;
-    __local const uint* const dstChnlLoc2 = dstChnlLoc + mul24(hasChnl2, wgSzLin);
-    __global uint* const dstChnlGlob = cellDescGlob + calcOutBinGlob(
-        wiIdLin, binsPerCell, cellSz, cellCntLoc, imGlobSz.x, halfPad.x);
-    __global uint* const dstChnlGlob2 = !hasChnl2 ? dstChnlGlob : (cellDescGlob + calcOutBinGlob(
-        wiIdLin + wgSzLin, binsPerCell, cellSz, cellCntLoc, imGlobSz.x, halfPad.x));
+    const int cellCntGlobX = (imGlobSzX - 2 * halfPad.x) / cellSz;
+    const int binsPerIter = mul24(mul24(cellCntLoc.y, cellCntGlobX), (int)SENS_BINS);
+    int dstIdLoc[2];
+    int dstIdGlob[2];
+    {
+        const int binsCnt = mul24(mul24(cellCntLoc.x, cellCntLoc.y), (int)SENS_BINS);
+        const int globShift = mul24((int)get_group_id(0), cellCntLoc.x);
+        #pragma unroll
+        for (int i = 0; i < 2; ++i)
+        {
+            dstIdLoc[i] = mad24((int)HOG_WG_SZ_BIG_LIN, i, wiIdLin) % binsCnt;
+            const int cellIdLocLin = dstIdLoc[i] / SENS_BINS;
+            const int2 cellIdGlob = (int2)(
+                cellIdLocLin % cellCntLoc.x + globShift, cellIdLocLin / cellCntLoc.x);
+            dstIdGlob[i] = mad24(mad24(cellIdGlob.y, cellCntGlobX, cellIdGlob.x),
+                (int)SENS_BINS, dstIdLoc[i] % SENS_BINS);
+        }
+    }
 
     for (int iter = 0; iter < iterCnt; ++iter)
     {
@@ -237,10 +160,9 @@ __kernel void calcCellDesc(
         {
             derivsXloc[srcIdLoc[i]] = derivsXglob[srcIdGlob[i]];
             derivsYloc[srcIdLoc[i]] = derivsYglob[srcIdGlob[i]];
-            srcIdGlob[i] += wgSz.x;
+            cellDescLoc[dstIdLoc[i]] = 0;
+            srcIdGlob[i] += derivsPerIter;
         }
-        cellDescLoc[wiIdLin] = 0;
-        cellDescLoc[wiIdLin + wgSzLin] = 0;
         barrier(CLK_LOCAL_MEM_FENCE);
 
         #pragma unroll 4
@@ -250,22 +172,25 @@ __kernel void calcCellDesc(
                 derivsXloc[derivIdsLin[i]], derivsYloc[derivIdsLin[i]]);
             const float mag = fast_length(grad) * interpCellWeights[i];
             const float ang = atan2pi(grad.y, grad.x) * 0.5f;
-            const float bin = (float)binsPerCell * (ang + (float)(ang < 0.0f));
+            const float bin = SENS_BINS * (ang + (float)(ang < 0.0f));
 
             int2 interpBins = (int)bin;
             interpBins.s1++;
             float2 interpBinWeights = bin - (float)interpBins.s0;
             interpBinWeights.s0 = 1.0f - interpBinWeights.s1;
-            interpBins %= binsPerCell;
+            interpBins = interpBins % SENS_BINS + interpCellId;
 
-            atomic_add(dstCellLoc + interpBins.s0, convert_uint_sat(mag * interpBinWeights.s0));
-            atomic_add(dstCellLoc + interpBins.s1, convert_uint_sat(mag * interpBinWeights.s1));
+            atomic_add(cellDescLoc + interpBins.s0, convert_uint_sat(mag * interpBinWeights.s0));
+            atomic_add(cellDescLoc + interpBins.s1, convert_uint_sat(mag * interpBinWeights.s1));
         }
         barrier(CLK_LOCAL_MEM_FENCE);
 
-        const int tmpId = mul24(mul24(iter, cellCntLoc.x), binsPerCell);
-        dstChnlGlob[tmpId] = *dstChnlLoc;
-        dstChnlGlob2[tmpId] = *dstChnlLoc2;
+        #pragma unroll 2
+        for (int i = 0; i < 2; ++i)
+        {
+            cellDescGlob[dstIdGlob[i]] = cellDescLoc[dstIdLoc[i]];
+            dstIdGlob[i] += binsPerIter;
+        }
         barrier(CLK_LOCAL_MEM_FENCE);
     }
 }
@@ -295,24 +220,21 @@ __kernel void calcCellNorms(
     __global const uint* restrict cellDescGlob,
     __global float* restrict cellNormsGlob,
     const int iterCnt,
-    const int sensBinCnt,
     const int padX)
 {
     const int wiIdX = get_local_id(0);
     const int wiIdYglob = get_global_id(1);
-    const int wgSzX = get_local_size(0);
-    const int cellCntX = mul24(wgSzX, iterCnt);
-    const int binCntPerIter = mul24(wgSzX, sensBinCnt);
+    const int cellCntX = mul24((int)HOG_WG_SZ_SMALL, iterCnt);
+    const int binCntPerIter = mul24((int)HOG_WG_SZ_SMALL, SENS_BINS);
 
-    cellDescGlob += mul24(sensBinCnt, mad24(wiIdYglob, cellCntX, wiIdX));
+    cellDescGlob += mul24((int)SENS_BINS, mad24(wiIdYglob, cellCntX, wiIdX));
     cellNormsGlob += mad24(wiIdYglob + 1, cellCntX + padX, wiIdX + 1);
 
     float4 sensDesc[5];
     float4 insDesc[3];
 
-    for (int iter = 0, shiftDesc = 0, shiftNorms = 0;
-         iter < iterCnt;
-         ++iter, shiftDesc += binCntPerIter, shiftNorms += wgSzX)
+    for (int iter = 0, shiftDesc = 0, shiftNorms = 0; iter < iterCnt;
+         ++iter, shiftDesc += binCntPerIter, shiftNorms += HOG_WG_SZ_SMALL)
     {
         loadCellDesc(cellDescGlob + shiftDesc, sensDesc, insDesc);
         cellNormsGlob[shiftNorms] = insDesc[2].s0 * insDesc[2].s0 +
@@ -327,18 +249,18 @@ __kernel void sumCellNormsX(
     const int iterCnt)
 {
     const int wiIdX = get_local_id(0);
-    const int wgSzX = get_local_size(0);
-    const int copyLoc = wiIdX == 0 ? wgSzX : 0;
+    const int copyLoc = wiIdX == 0 ? HOG_WG_SZ_SMALL : 0;
 
     {
-        const int shiftGlob = mad24((int)get_global_id(1), mad24(wgSzX, iterCnt, 1), wiIdX);
-        cellNormsLoc += mad24((int)get_local_id(1), wgSzX + 1, wiIdX);
+        const int shiftGlob = mad24((int)get_global_id(1),
+            mad24((int)HOG_WG_SZ_SMALL, iterCnt, 1), wiIdX);
+        cellNormsLoc += mad24((int)get_local_id(1), HOG_WG_SZ_SMALL + 1, wiIdX);
         cellNormsGlob += shiftGlob;
         sumsGlob += shiftGlob;
         *cellNormsLoc = *cellNormsGlob++;
     }
 
-    for (int iter = 0, shiftGlob = 0; iter < iterCnt; ++iter, shiftGlob += wgSzX)
+    for (int iter = 0, shiftGlob = 0; iter < iterCnt; ++iter, shiftGlob += HOG_WG_SZ_SMALL)
     {
         barrier(CLK_LOCAL_MEM_FENCE);
         const float right = cellNormsGlob[shiftGlob];
@@ -356,14 +278,13 @@ __kernel void calcInvBlockNorms(
     const int iterCnt)
 {
     const int wiIdY = get_local_id(1);
-    const int2 wgSz = (int2)(get_local_size(0), get_local_size(1));
     const int cellCntGlobX = get_global_size(0) + 1;
-    const int copyLoc = wiIdY == 0 ? mul24(wgSz.y, wgSz.x) : 0;
-    const int iterStep = mul24(wgSz.y, cellCntGlobX);
+    const int copyLoc = wiIdY == 0 ? HOG_WG_SZ_SMALL_LIN : 0;
+    const int iterStep = mul24((int)HOG_WG_SZ_SMALL, cellCntGlobX);
 
     {
         const int shiftGlob = mad24(wiIdY, cellCntGlobX, (int)get_global_id(0));
-        cellNormsLoc += mad24(wiIdY, wgSz.x, (int)get_local_id(0));
+        cellNormsLoc += mad24(wiIdY, (int)HOG_WG_SZ_SMALL, (int)get_local_id(0));
         cellNormsGlob += shiftGlob;
         invBlockNormsGlob += shiftGlob;
         *cellNormsLoc = *cellNormsGlob;
@@ -374,7 +295,7 @@ __kernel void calcInvBlockNorms(
     {
         barrier(CLK_LOCAL_MEM_FENCE);
         const float bottom = cellNormsGlob[shiftGlob];
-        cellNormsLoc[wgSz.x] = bottom;
+        cellNormsLoc[HOG_WG_SZ_SMALL] = bottom;
         barrier(CLK_LOCAL_MEM_FENCE);
         invBlockNormsGlob[shiftGlob] = half_rsqrt(*cellNormsLoc + bottom + 1e-7f);
         *cellNormsLoc = cellNormsLoc[copyLoc];
@@ -387,47 +308,45 @@ __kernel void applyNormalization(
     __global float* restrict blockDescGlob,
     __local float* restrict normsLoc,
     const int iterCnt,
-    const int padX,
-    const int insBinCnt)
+    const int padX)
 {
     const int2 wiId = (int2)(get_local_id(0), get_local_id(1));
-    const int2 wgSz = (int2)(get_local_size(0), get_local_size(1));
-    const int normsLocSzX = wgSz.x + 1;
-    const int cellCntGlobX = mul24(wgSz.x, iterCnt);
-    const int sensBinCnt = 2 * insBinCnt;
-    const int blockBinCnt = insBinCnt + sensBinCnt + 4;
-    const int cellBinCntPerIter = mul24(wgSz.x, sensBinCnt);
-    const int blockBinCntPerIter = mul24(wgSz.x, blockBinCnt);
-    const float trunc = 0.2f;
+    const int normsLocSzX = HOG_WG_SZ_SMALL + 1;
+    const int cellCntGlobX = get_global_size(0);
+    const int normsGlobSzX = cellCntGlobX + padX;
+    const int normsPerIter = mul24((int)HOG_WG_SZ_SMALL, normsGlobSzX);
+    const int cellsPerIter = mul24((int)HOG_WG_SZ_SMALL, cellCntGlobX);
+    const int cellBinCntPerIter = mul24(cellsPerIter, (int)SENS_BINS);
+    const int blockBinCntPerIter = mul24(cellsPerIter, (int)BINS_PER_BLOCK);
 
     {
-        const int cellIdLin = mad24((int)get_global_id(1), cellCntGlobX, wiId.x);
-        cellDescGlob += mul24(cellIdLin, sensBinCnt);
-        blockDescGlob += mul24(cellIdLin, blockBinCnt);
+        const int cellIdLin = mad24(wiId.y, cellCntGlobX, (int)get_global_id(0));
+        cellDescGlob += mul24(cellIdLin, (int)SENS_BINS);
+        blockDescGlob += mul24(cellIdLin, (int)BINS_PER_BLOCK);
     }
 
     int loadIdLoc[2];
     int loadIdGlob[2];
     {
-        const int wiIdLin = mad24(wiId.y, wgSz.x, wiId.x);
-        const int wgSzLin = mul24(wgSz.x, wgSz.y);
-        const int normsLocSzLin = mul24(normsLocSzX, wgSz.y + 1);
+        const int wiIdLin = mad24(wiId.y, (int)HOG_WG_SZ_SMALL, wiId.x);
+        const int normsLocSzLin = mul24(normsLocSzX, HOG_WG_SZ_SMALL + 1);
         loadIdLoc[0] = wiIdLin;
-        loadIdLoc[1] = wiIdLin + ((wiIdLin + wgSzLin < normsLocSzLin) ? wgSzLin : 0);
+        loadIdLoc[1] = wiIdLin + ((wiIdLin + HOG_WG_SZ_SMALL_LIN < normsLocSzLin) ?
+            HOG_WG_SZ_SMALL_LIN : 0);
         #pragma unroll 2
         for (int i = 0; i < 2; ++i)
         {
             const int2 loc = (int2)(loadIdLoc[i] % normsLocSzX, loadIdLoc[i] / normsLocSzX);
-            loadIdGlob[i] = mad24(mad24((int)get_group_id(1), wgSz.y, loc.y),
-                cellCntGlobX + padX, loc.x);
+            loadIdGlob[i] = mad24(loc.y, normsGlobSzX,
+                mad24((int)get_group_id(0), (int)HOG_WG_SZ_SMALL, loc.x));
         }
     }
 
     int normIds[4];
     {
-        normIds[3] = mad24(wiId.y, wgSz.x + 1, wiId.x);
+        normIds[3] = mad24(wiId.y, HOG_WG_SZ_SMALL + 1, wiId.x);
         normIds[2] = normIds[3] + 1;
-        normIds[1] = normIds[3] + wgSz.x + 1;
+        normIds[1] = normIds[3] + HOG_WG_SZ_SMALL + 1;
         normIds[0] = normIds[1] + 1;
     }
 
@@ -438,14 +357,16 @@ __kernel void applyNormalization(
     float4 tmp;
     float descNorm[4];
 
-    for (int iter = 0, normsShift = 0, cellDescShift = 0;
-         iter < iterCnt;
-         ++iter, normsShift += wgSz.x, cellDescShift += cellBinCntPerIter,
-         blockDescGlob += blockBinCntPerIter)
+    for (int iter = 0, cellDescShift = 0; iter < iterCnt;
+         ++iter, cellDescShift += cellBinCntPerIter, blockDescGlob += blockBinCntPerIter)
     {
         barrier(CLK_LOCAL_MEM_FENCE);
-        normsLoc[loadIdLoc[0]] = invBlockNormsGlob[loadIdGlob[0] + normsShift];
-        normsLoc[loadIdLoc[1]] = invBlockNormsGlob[loadIdGlob[1] + normsShift];
+        #pragma unroll 2
+        for (int i = 0; i < 2; ++i)
+        {
+            normsLoc[loadIdLoc[i]] = invBlockNormsGlob[loadIdGlob[i]];
+            loadIdGlob[i] += normsPerIter;
+        }
 
         barrier(CLK_LOCAL_MEM_FENCE);
         loadCellDesc(cellDescGlob + cellDescShift, sensDesc, insDesc);
@@ -468,18 +389,18 @@ __kernel void applyNormalization(
             #pragma unroll 4
             for (int i = 0; i < 4; ++i)
             {
-                sensDescNorm[i] += fmin(sensDesc[i] * invNorm, trunc);
+                sensDescNorm[i] += fmin(sensDesc[i] * invNorm, TRUNC);
             }
-            sensDescNorm[4].s01 += fmin(sensDesc[4].s01 * invNorm, trunc);
+            sensDescNorm[4].s01 += fmin(sensDesc[4].s01 * invNorm, TRUNC);
             descNorm[normId] = 0.0f;
             #pragma unroll 2
             for (int i = 0; i < 2; ++i)
             {
-                tmp = fmin(insDesc[i] * invNorm, trunc);
+                tmp = fmin(insDesc[i] * invNorm, TRUNC);
                 insDescNorm[i] += tmp;
                 descNorm[normId] += tmp.s0 + tmp.s1 + tmp.s2 + tmp.s3;
             }
-            tmp.s0 = fmin(insDesc[2].s0 * invNorm, trunc);
+            tmp.s0 = fmin(insDesc[2].s0 * invNorm, TRUNC);
             insDescNorm[2].s0 += tmp.s0;
             descNorm[normId] += tmp.s0;
         }
