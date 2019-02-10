@@ -14,6 +14,14 @@ inline float getPixel(const float *image, const int size[2], int x, int y)
     return isValid ? image[x + y * size[0]] : 0.0f;
 }
 
+inline float getPixelDerivs(const float *image, const int size[2], int x, int y)
+{
+    int isValid = (x >= -1) & (x <= size[0]) & (y >= -1) & (y <= size[1]);
+    x = clamp(x, 0, size[0] - 1);
+    y = clamp(y, 0, size[1] - 1);
+    return isValid ? image[x + y * size[0]] : 0.0f;
+}
+
 inline void setPixel(
     float *image, float value,
     const int size[2], int channels,
@@ -37,16 +45,28 @@ inline void calculateBinWeights(
     interpBins[1] %= binCount;
 }
 
-HogSettings::HogSettings(int imWidth, int imHeight)
+constexpr const int HogSettings::wgSize_[2];
+constexpr const float HogSettings::truncation_;
+
+bool HogSettings::init(int imWidth, int imHeight)
 {
-    imSize_[0] = imWidth;
-    imSize_[1] = imHeight;
-    for (int i = 0; i < 2; ++i)
+    if (!cellSize_ || imWidth % cellSize_ || imHeight % cellSize_)
     {
-        halfPadding_[i] = cellSize_ / 2 + 1;
-        cellCount_[i] = ((imSize_[i] - 2 * halfPadding_[i]) / wgSize_[i]) * wgSize_[i] / cellSize_;
-        halfPadding_[i] = (imSize_[i] - cellCount_[i] * cellSize_) / 2;
+        return false;
     }
+    cellCount_[0] = imWidth / cellSize_;
+    cellCount_[1] = imHeight / cellSize_;
+    return true;
+}
+
+int HogSettings::imWidth() const
+{
+    return cellCount_[0] * cellSize_;
+}
+
+int HogSettings::imHeight() const
+{
+    return cellCount_[1] * cellSize_;
 }
 
 HogProto::~HogProto()
@@ -130,17 +150,16 @@ void HogProto::calculateCellDescriptor(const float *image)
     int sensitiveBinCount = settings_.sensitiveBinCount();
     int insensitiveBinCount = settings_.insensitiveBinCount_;
     int cellCount[2] = { settings_.cellCount_[0], settings_.cellCount_[1] };
-    int imageSize[2] = { settings_.imSize_[0], settings_.imSize_[1] };
-    int halfPadding[2] = { settings_.halfPadding_[0], settings_.halfPadding_[1] };
+    int imageSize[2] = { settings_.imWidth(), settings_.imHeight() };
     int cellDescriptorLength = cellCount[0] * cellCount[1] * channelsPerCell;
     std::fill(cellDescriptor_, cellDescriptor_ + cellDescriptorLength, 0.0f);
 
     for (int cellY = 0; cellY < cellCount[1]; ++cellY)
     {
-        int leftmostPixelY = cellY * cellSize - cellSize / 2 + halfPadding[1];
+        int leftmostPixelY = cellY * cellSize - cellSize / 2;
         for (int cellX = 0; cellX < cellCount[0]; ++cellX)
         {
-            int leftmostPixelX = cellX * cellSize - cellSize / 2 + halfPadding[0];
+            int leftmostPixelX = cellX * cellSize - cellSize / 2;
             for (int cellNeighborY = 0; cellNeighborY < 2 * cellSize; ++cellNeighborY)
             {
                 int pixelY = leftmostPixelY + cellNeighborY;
@@ -149,11 +168,16 @@ void HogProto::calculateCellDescriptor(const float *image)
                     int pixelX = leftmostPixelX + cellNeighborX;
 
                     float gradientX =
-                        image[pixelX + 1 + pixelY * imageSize[0]] -
-                        image[pixelX - 1 + pixelY * imageSize[0]];
+                        getPixelDerivs(image, imageSize, pixelX + 1, pixelY) -
+                        getPixelDerivs(image, imageSize, pixelX - 1, pixelY);
                     float gradientY =
-                        image[pixelX + (pixelY + 1) * imageSize[0]] -
-                        image[pixelX + (pixelY - 1) * imageSize[0]];
+                        getPixelDerivs(image, imageSize, pixelX, pixelY + 1) -
+                        getPixelDerivs(image, imageSize, pixelX, pixelY - 1);
+                    if (pixelX < 0 || pixelX >= imageSize[0] ||
+                        pixelY < 0 || pixelY >= imageSize[1])
+                    {
+                        gradientX = gradientY = 0.0f;
+                    }
                     float magnitude = sqrtf(gradientX * gradientX + gradientY * gradientY);
 
                     float angle = atan2f(gradientY, gradientX);

@@ -57,10 +57,15 @@ void HogProcessor::setupProcessor(const VideoProcessor::CaptureSettings &setting
         emit sendError(msg);
     };
 
-    HogSettings hogSettings(settings.frameWidth_, settings.frameHeight_);
+    HogSettings hogSettings;
+    if (!hogSettings.init(settings.frameWidth_, settings.frameHeight_))
+    {
+        emitError("Invalid image resolution passed into HogSettings");
+        return;
+    }
     hogProto_.initialize(hogSettings);
     {
-        int bytes = hogSettings.imSize_[0] * hogSettings.imSize_[1] * sizeof(cl_float);
+        int bytes = hogSettings.imWidth() * hogSettings.imHeight() * sizeof(cl_float);
         oclImage_ = clCreateBuffer(oclContext_, CL_MEM_READ_ONLY, bytes, NULL, NULL);
         if (!oclImage_)
         {
@@ -228,32 +233,9 @@ void HogProcessor::calculateHogPiotr()
     cv::cvtColor(ocvImage, *ocvImageGray_, CV_RGB2GRAY);
     ocvImageGray_->convertTo(*ocvImageGrayFloat_, CV_32FC1);
 
-    int croppedSize[2];
-    int halfPadding[2];
-    for (int i = 0; i < 2; ++i)
-    {
-        croppedSize[i] = hogProto_.settings_.cellCount_[i] * hogProto_.settings_.cellSize_;
-        halfPadding[i] = hogProto_.settings_.halfPadding_[i];
-    }
-    cv::Mat_<float> ocvImGrayCropped = (*ocvImageGrayFloat_)(cv::Rect(
-        halfPadding[0], halfPadding[1], croppedSize[0], croppedSize[1]));
-
-    float pixelMax = std::numeric_limits<float>::lowest();
-    float pixelMin = std::numeric_limits<float>::max();
-    for (int y = 0; y < croppedSize[1]; ++y)
-    {
-        for (int x = 0; x < croppedSize[0]; ++x)
-        {
-            float pixel = ocvImGrayCropped.at<float>(y, x);
-            pixelMax = fmaxf(pixelMax, pixel);
-            pixelMin = fminf(pixelMin, pixel);
-        }
-    }
-    std::cout << "pixelMax = " << pixelMax << "   pixelMin = " << pixelMin << "\n";
-
     const HogSettings &hogSettings = hogProto_.settings_;
     std::vector<cv::Mat> hogPiotr = FHoG::extract(
-        ocvImGrayCropped, 2, hogSettings.cellSize_, hogSettings.insensitiveBinCount_,
+        *ocvImageGray_, 2, hogSettings.cellSize_, hogSettings.insensitiveBinCount_,
         1, hogSettings.truncation_);
     for (int c = 0; c < hogSettings.channelsPerBlock(); ++c)
     {
@@ -289,7 +271,7 @@ void HogProcessor::compareDescriptors(const float *desc) const
             if (cellX < 2 || cellX >= cellCount[0] - 2 ||
                 cellY < 2 || cellY >= cellCount[1] - 2)
             {
-                continue;
+//                continue;
             }
 
             int channelIndex = c * channelsPerFeature + b;

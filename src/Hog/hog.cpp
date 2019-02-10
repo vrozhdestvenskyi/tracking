@@ -32,17 +32,20 @@ cl_int Derivs::initialize(
     cl_mem image)
 {
     kernel_.dim_ = 2;
-    kernel_.ndrangeLoc_[0] = kernel_.ndrangeLoc_[1] = 16;
-    kernel_.ndrangeGlob_[0] = settings.imSize_[0];
+    for (int i = 0; i < 2; ++i)
+    {
+        kernel_.ndrangeLoc_[i] = settings.wgSize_[i];
+    }
+    kernel_.ndrangeGlob_[0] = settings.imWidth();
     kernel_.ndrangeGlob_[1] = kernel_.ndrangeLoc_[1];
     if (kernel_.ndrangeGlob_[0] % kernel_.ndrangeLoc_[0] ||
-        settings.imSize_[1] % kernel_.ndrangeLoc_[1])
+        settings.imHeight() % kernel_.ndrangeLoc_[1])
     {
         return CL_INVALID_WORK_GROUP_SIZE;
     }
 
-    size_t bytes = (settings.imSize_[0] + settings.cellSize_) *
-        (settings.imSize_[1] + settings.cellSize_) * sizeof(cl_float);
+    size_t bytes = (settings.imWidth() + settings.cellSize_) *
+        (settings.imHeight() + settings.cellSize_) * sizeof(cl_float);
     {
         std::vector<float> zeros(bytes, 0.0f);
         derivsX_ = clCreateBuffer(context, CL_MEM_READ_WRITE | CL_MEM_COPY_HOST_PTR,
@@ -67,9 +70,7 @@ cl_int Derivs::initialize(
     cl_int status = clSetKernelArg(kernel_.kernel_, argId++, sizeof(cl_mem), &image);
     status |= clSetKernelArg(kernel_.kernel_, argId++, sizeof(cl_mem), &derivsX_);
     status |= clSetKernelArg(kernel_.kernel_, argId++, sizeof(cl_mem), &derivsY_);
-    bytes = (kernel_.ndrangeLoc_[0] + 2) * (kernel_.ndrangeLoc_[1] + 2) * sizeof(cl_float);
-    status |= clSetKernelArg(kernel_.kernel_, argId++, bytes, NULL);
-    int iterationsCount = settings.imSize_[1] / kernel_.ndrangeLoc_[1];
+    int iterationsCount = settings.imHeight() / kernel_.ndrangeLoc_[1];
     status |= clSetKernelArg(kernel_.kernel_, argId++, sizeof(cl_int), &iterationsCount);
     int halfPad = settings.cellSize_ / 2;
     status |= clSetKernelArg(kernel_.kernel_, argId++, sizeof(cl_int), &halfPad);
@@ -117,8 +118,13 @@ cl_int CellHog::initialize(
     {
         kernel_.ndrangeLoc_[i] = settings.wgSize_[i];
     }
-    kernel_.ndrangeGlob_[0] = settings.cellCount_[0] * settings.cellSize_;
+    kernel_.ndrangeGlob_[0] = settings.imWidth();
     kernel_.ndrangeGlob_[1] = kernel_.ndrangeLoc_[1];
+    if (kernel_.ndrangeGlob_[0] % kernel_.ndrangeLoc_[0] ||
+        settings.imHeight() % kernel_.ndrangeLoc_[1])
+    {
+        return CL_INVALID_WORK_GROUP_SIZE;
+    }
 
     int bytes = settings.cellCount_[0] * settings.cellCount_[1] * settings.sensitiveBinCount() *
         sizeof(cl_uint);
@@ -133,22 +139,12 @@ cl_int CellHog::initialize(
         return CL_INVALID_KERNEL;
     }
 
-    int cellSize = settings.cellSize_;
-    cl_int2 halfPadding = { settings.halfPadding_[0], settings.halfPadding_[1] };
-
     int argId = 0;
     cl_int status = clSetKernelArg(kernel_.kernel_, argId++, sizeof(cl_mem), &derivsX);
     status |= clSetKernelArg(kernel_.kernel_, argId++, sizeof(cl_mem), &derivsY);
     status |= clSetKernelArg(kernel_.kernel_, argId++, sizeof(cl_mem), &descriptor_);
-    bytes = (kernel_.ndrangeLoc_[0] + cellSize) * (kernel_.ndrangeLoc_[1] + cellSize) * sizeof(cl_float);
-    status |= clSetKernelArg(kernel_.kernel_, argId++, bytes, NULL);
-    status |= clSetKernelArg(kernel_.kernel_, argId++, bytes, NULL);
-    bytes = kernel_.ndrangeLoc_[0] * kernel_.ndrangeLoc_[1] * 2 * sizeof(cl_uint);
-    status |= clSetKernelArg(kernel_.kernel_, argId++, bytes, NULL);
-    int iterationsCount = settings.cellCount_[1] * settings.cellSize_ / kernel_.ndrangeLoc_[1];
+    int iterationsCount = settings.imHeight() / kernel_.ndrangeLoc_[1];
     status |= clSetKernelArg(kernel_.kernel_, argId++, sizeof(cl_int), &iterationsCount);
-    status |= clSetKernelArg(kernel_.kernel_, argId++, sizeof(cl_int), &cellSize);
-    status |= clSetKernelArg(kernel_.kernel_, argId++, sizeof(cl_int2), &halfPadding);
     return status;
 }
 
@@ -189,8 +185,8 @@ cl_int CellNorm::initialize(
     {
         return CL_INVALID_WORK_GROUP_SIZE;
     }
-    kernel_.ndrangeGlob_[0] = kernel_.ndrangeLoc_[0];
-    kernel_.ndrangeGlob_[1] = settings.cellCount_[1];
+    kernel_.ndrangeGlob_[0] = settings.cellCount_[0];
+    kernel_.ndrangeGlob_[1] = kernel_.ndrangeLoc_[1];
     padding_ = { (int)kernel_.ndrangeLoc_[0] + 1, (int)kernel_.ndrangeLoc_[1] + 1 };
 
     size_t bytes = (settings.cellCount_[0] + padding_.x) * (settings.cellCount_[1] + padding_.y) *
@@ -213,7 +209,7 @@ cl_int CellNorm::initialize(
     int argId = 0;
     cl_int status = clSetKernelArg(kernel_.kernel_, argId++, sizeof(cl_mem), &sensitiveCellDescriptor);
     status |= clSetKernelArg(kernel_.kernel_, argId++, sizeof(cl_mem), &cellNorms_);
-    int iterationsCount = settings.cellCount_[0] / kernel_.ndrangeLoc_[0];
+    int iterationsCount = settings.cellCount_[1] / kernel_.ndrangeLoc_[1];
     status |= clSetKernelArg(kernel_.kernel_, argId++, sizeof(cl_int), &iterationsCount);
     status |= clSetKernelArg(kernel_.kernel_, argId++, sizeof(cl_int), &padding_.x);
     return status;
@@ -280,8 +276,6 @@ cl_int CellNormSumX::initialize(
     int argId = 0;
     cl_int status = clSetKernelArg(kernel_.kernel_, argId++, sizeof(cl_mem), &cellNorms);
     status |= clSetKernelArg(kernel_.kernel_, argId++, sizeof(cl_mem), &normSums_);
-    bytes = (kernel_.ndrangeLoc_[0] + 1) * kernel_.ndrangeLoc_[1] * sizeof(cl_float);
-    status |= clSetKernelArg(kernel_.kernel_, argId++, bytes, NULL);
     int iterationsCount = (settings.cellCount_[0] + padding.x - 1) / kernel_.ndrangeLoc_[0];
     status |= clSetKernelArg(kernel_.kernel_, argId++, sizeof(cl_int), &iterationsCount);
     return status;
@@ -348,8 +342,6 @@ cl_int InvBlockNorm::initialize(
     int argId = 0;
     cl_int status = clSetKernelArg(kernel_.kernel_, argId++, sizeof(cl_mem), &cellNorms);
     status |= clSetKernelArg(kernel_.kernel_, argId++, sizeof(cl_mem), &invBlockNorms_);
-    bytes = kernel_.ndrangeLoc_[0] * (kernel_.ndrangeLoc_[1] + 1) * sizeof(cl_float);
-    status |= clSetKernelArg(kernel_.kernel_, argId++, bytes, NULL);
     int iterationsCount = (settings.cellCount_[1] + padding.y - 1) / kernel_.ndrangeLoc_[1];
     status |= clSetKernelArg(kernel_.kernel_, argId++, sizeof(cl_int), &iterationsCount);
     return status;
@@ -414,8 +406,6 @@ cl_int BlockHog::initialize(
     cl_int status = clSetKernelArg(kernel_.kernel_, argId++, sizeof(cl_mem), &cellDesc);
     status |= clSetKernelArg(kernel_.kernel_, argId++, sizeof(cl_mem), &invBlockNorms);
     status |= clSetKernelArg(kernel_.kernel_, argId++, sizeof(cl_mem), &descriptor_);
-    bytes = (kernel_.ndrangeLoc_[0] + 1) * (kernel_.ndrangeLoc_[1] + 1) * sizeof(cl_float);
-    status |= clSetKernelArg(kernel_.kernel_, argId++, bytes, NULL);
     int iterationsCount = settings.cellCount_[1] / kernel_.ndrangeLoc_[1];
     status |= clSetKernelArg(kernel_.kernel_, argId++, sizeof(cl_int), &iterationsCount);
     status |= clSetKernelArg(kernel_.kernel_, argId++, sizeof(cl_int), &padding.x);
