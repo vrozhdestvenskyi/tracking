@@ -9,7 +9,7 @@ struct RangedKernel
 {
     void release();
     cl_int calculate(
-        cl_command_queue commandQueue,
+        cl_command_queue queue,
         cl_int numWaitEvents,
         const cl_event *waitList,
         cl_event &event);
@@ -31,7 +31,7 @@ public:
         cl_mem image);
     void release();
     cl_int calculate(
-        cl_command_queue commandQueue,
+        cl_command_queue queue,
         cl_int numWaitEvents,
         const cl_event *waitList,
         cl_event &event);
@@ -53,7 +53,7 @@ public:
         cl_mem derivsY);
     void release();
     cl_int calculate(
-        cl_command_queue commandQueue,
+        cl_command_queue queue,
         cl_int numWaitEvents,
         const cl_event *waitList,
         cl_event &event);
@@ -73,7 +73,7 @@ public:
         cl_mem sensitiveCellDescriptor);
     void release();
     cl_int calculate(
-        cl_command_queue commandQueue,
+        cl_command_queue queue,
         cl_int numWaitEvents,
         const cl_event *waitList,
         cl_event &event);
@@ -95,7 +95,7 @@ public:
         cl_mem cellNorms);
     void release();
     cl_int calculate(
-        cl_command_queue commandQueue,
+        cl_command_queue queue,
         cl_int numWaitEvents,
         const cl_event *waitList,
         cl_event &event);
@@ -116,7 +116,7 @@ public:
         cl_mem cellNorms);
     void release();
     cl_int calculate(
-        cl_command_queue commandQueue,
+        cl_command_queue queue,
         cl_int numWaitEvents,
         const cl_event *waitList,
         cl_event &event);
@@ -138,13 +138,37 @@ public:
         cl_mem invBlockNorms);
     void release();
     cl_int calculate(
-        cl_command_queue commandQueue,
+        cl_command_queue queue,
         cl_int numWaitEvents,
         const cl_event *waitList,
         cl_event &event);
 
     cl_mem descriptor_ = NULL;
     RangedKernel kernel_;
+};
+
+class Hog
+{
+public:
+    ~Hog();
+    cl_int initialize(
+        const HogSettings &settings,
+        cl_context context,
+        cl_program program,
+        cl_mem image);
+    void release();
+    cl_int calculate(
+        cl_command_queue queue,
+        cl_int numWaitEvents,
+        const cl_event *waitList,
+        cl_event &event);
+
+    Derivs derivs_;
+    CellHog cellHog_;
+    CellNorm cellNorm_;
+    CellNormSumX cellNormSumX_;
+    InvBlockNorm invBlockNorm_;
+    BlockHog blockHog_;
 };
 
 #endif // HOG_H

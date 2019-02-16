@@ -11,12 +11,12 @@ void RangedKernel::release()
 }
 
 cl_int RangedKernel::calculate(
-    cl_command_queue commandQueue,
+    cl_command_queue queue,
     cl_int numWaitEvents,
     const cl_event *waitList,
     cl_event &event)
 {
-    return clEnqueueNDRangeKernel(commandQueue, kernel_, dim_, NULL,
+    return clEnqueueNDRangeKernel(queue, kernel_, dim_, NULL,
         ndrangeGlob_, ndrangeLoc_, numWaitEvents, waitList, &event);
 }
 
@@ -93,12 +93,12 @@ void Derivs::release()
 }
 
 cl_int Derivs::calculate(
-    cl_command_queue commandQueue,
+    cl_command_queue queue,
     cl_int numWaitEvents,
     const cl_event *waitList,
     cl_event &event)
 {
-    return kernel_.calculate(commandQueue, numWaitEvents, waitList, event);
+    return kernel_.calculate(queue, numWaitEvents, waitList, event);
 }
 
 CellHog::~CellHog()
@@ -159,12 +159,12 @@ void CellHog::release()
 }
 
 cl_int CellHog::calculate(
-    cl_command_queue commandQueue,
+    cl_command_queue queue,
     cl_int numWaitEvents,
     const cl_event *waitList,
     cl_event &event)
 {
-    return kernel_.calculate(commandQueue, numWaitEvents, waitList, event);
+    return kernel_.calculate(queue, numWaitEvents, waitList, event);
 }
 
 CellNorm::~CellNorm()
@@ -226,12 +226,12 @@ void CellNorm::release()
 }
 
 cl_int CellNorm::calculate(
-    cl_command_queue commandQueue,
+    cl_command_queue queue,
     cl_int numWaitEvents,
     const cl_event *waitList,
     cl_event &event)
 {
-    return kernel_.calculate(commandQueue, numWaitEvents, waitList, event);
+    return kernel_.calculate(queue, numWaitEvents, waitList, event);
 }
 
 CellNormSumX::~CellNormSumX()
@@ -292,12 +292,12 @@ void CellNormSumX::release()
 }
 
 cl_int CellNormSumX::calculate(
-    cl_command_queue commandQueue,
+    cl_command_queue queue,
     cl_int numWaitEvents,
     const cl_event *waitList,
     cl_event &event)
 {
-    return kernel_.calculate(commandQueue, numWaitEvents, waitList, event);
+    return kernel_.calculate(queue, numWaitEvents, waitList, event);
 }
 
 InvBlockNorm::~InvBlockNorm()
@@ -358,12 +358,12 @@ void InvBlockNorm::release()
 }
 
 cl_int InvBlockNorm::calculate(
-    cl_command_queue commandQueue,
+    cl_command_queue queue,
     cl_int numWaitEvents,
     const cl_event *waitList,
     cl_event &event)
 {
-    return kernel_.calculate(commandQueue, numWaitEvents, waitList, event);
+    return kernel_.calculate(queue, numWaitEvents, waitList, event);
 }
 
 BlockHog::~BlockHog()
@@ -423,11 +423,120 @@ void BlockHog::release()
 }
 
 cl_int BlockHog::calculate(
-    cl_command_queue commandQueue,
+    cl_command_queue queue,
     cl_int numWaitEvents,
     const cl_event *waitList,
     cl_event &event)
 {
-    return kernel_.calculate(commandQueue, numWaitEvents, waitList, event);
+    return kernel_.calculate(queue, numWaitEvents, waitList, event);
+}
+
+Hog::~Hog()
+{
+    release();
+}
+
+cl_int Hog::initialize(
+    const HogSettings &settings,
+    cl_context context,
+    cl_program program,
+    cl_mem image)
+{
+    cl_int status = derivs_.initialize(settings, context, program, image);
+    if (status == CL_SUCCESS)
+    {
+        status = cellHog_.initialize(settings, context, program,
+            derivs_.derivsX_, derivs_.derivsY_);
+    }
+    if (status == CL_SUCCESS)
+    {
+        status = cellNorm_.initialize(settings, context, program, cellHog_.descriptor_);
+    }
+    if (status == CL_SUCCESS)
+    {
+        status = cellNormSumX_.initialize(settings, cellNorm_.padding_, context, program,
+            cellNorm_.cellNorms_);
+    }
+    if (status == CL_SUCCESS)
+    {
+        status = invBlockNorm_.initialize(settings, cellNorm_.padding_, context, program,
+            cellNormSumX_.normSums_);
+    }
+    if (status == CL_SUCCESS)
+    {
+        status = blockHog_.initialize(settings, cellNorm_.padding_, context, program,
+            cellHog_.descriptor_, invBlockNorm_.invBlockNorms_);
+    }
+    return status;
+}
+
+void Hog::release()
+{
+    blockHog_.release();
+    invBlockNorm_.release();
+    cellNormSumX_.release();
+    cellNorm_.release();
+    cellHog_.release();
+    derivs_.release();
+}
+
+cl_int Hog::calculate(
+    cl_command_queue queue,
+    cl_int numWaitEvents,
+    const cl_event *waitList,
+    cl_event &event)
+{
+    cl_event derivsEvent = NULL;
+    cl_int status = derivs_.calculate(queue, numWaitEvents, waitList, derivsEvent);
+    cl_event cellHogEvent = NULL;
+    if (status == CL_SUCCESS)
+    {
+        status = cellHog_.calculate(queue, 1, &derivsEvent, cellHogEvent);
+    }
+    if (derivsEvent)
+    {
+        clReleaseEvent(derivsEvent);
+        derivsEvent = NULL;
+    }
+    cl_event cellNormEvent = NULL;
+    if (status == CL_SUCCESS)
+    {
+        status = cellNorm_.calculate(queue, 1, &cellHogEvent, cellNormEvent);
+    }
+    if (cellHogEvent)
+    {
+        clReleaseEvent(cellHogEvent);
+        cellHogEvent = NULL;
+    }
+    cl_event sumXevent = NULL;
+    if (status == CL_SUCCESS)
+    {
+        status = cellNormSumX_.calculate(queue, 1, &cellNormEvent, sumXevent);
+    }
+    if (cellNormEvent)
+    {
+        clReleaseEvent(cellNormEvent);
+        cellNormEvent = NULL;
+    }
+    cl_event blockNormEvent = NULL;
+    if (status == CL_SUCCESS)
+    {
+        status = invBlockNorm_.calculate(queue, 1, &sumXevent, blockNormEvent);
+    }
+    if (sumXevent)
+    {
+        clReleaseEvent(sumXevent);
+        sumXevent = NULL;
+    }
+    if (status == CL_SUCCESS)
+    {
+        status = blockHog_.calculate(queue, 1, &blockNormEvent, event);
+    }
+    if (blockNormEvent)
+    {
+        clReleaseEvent(blockNormEvent);
+        blockNormEvent = NULL;
+    }
+    return status;
 }
 

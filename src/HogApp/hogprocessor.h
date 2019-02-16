@@ -38,14 +38,9 @@ protected:
     std::shared_ptr<cv::Mat_<uchar> > ocvImageGray_ = nullptr;
     std::shared_ptr<cv::Mat_<float> > ocvImageGrayFloat_ = nullptr;
     float *hogPiotr_ = nullptr;
-    cl_mem oclImage_ = NULL;
-    Derivs derivs_;
     HogProto hogProto_;
-    CellHog hog_;
-    CellNorm cellNorm_;
-    CellNormSumX cellNormSumX_;
-    InvBlockNorm invBlockNorm_;
-    BlockHog blockHog_;
+    cl_mem oclImage_ = NULL;
+    Hog hog_;
     QElapsedTimer timer_;
     quint64 msSum_ = 0;
 };
