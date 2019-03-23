@@ -20,87 +20,6 @@ cl_int RangedKernel::calculate(
         ndrangeGlob_, ndrangeLoc_, numWaitEvents, waitList, &event);
 }
 
-Derivs::~Derivs()
-{
-    release();
-}
-
-cl_int Derivs::initialize(
-    const HogSettings &settings,
-    cl_context context,
-    cl_program program,
-    cl_mem image)
-{
-    kernel_.dim_ = 2;
-    for (int i = 0; i < 2; ++i)
-    {
-        kernel_.ndrangeLoc_[i] = settings.wgSize_[i];
-    }
-    kernel_.ndrangeGlob_[0] = settings.imWidth();
-    kernel_.ndrangeGlob_[1] = kernel_.ndrangeLoc_[1];
-    if (kernel_.ndrangeGlob_[0] % kernel_.ndrangeLoc_[0] ||
-        settings.imHeight() % kernel_.ndrangeLoc_[1])
-    {
-        return CL_INVALID_WORK_GROUP_SIZE;
-    }
-
-    size_t bytes = (settings.imWidth() + settings.cellSize_) *
-        (settings.imHeight() + settings.cellSize_) * sizeof(cl_float);
-    {
-        std::vector<float> zeros(bytes, 0.0f);
-        derivsX_ = clCreateBuffer(context, CL_MEM_READ_WRITE | CL_MEM_COPY_HOST_PTR,
-            bytes, zeros.data(), NULL);
-        if (derivsX_)
-        {
-            derivsY_ = clCreateBuffer(context, CL_MEM_READ_WRITE | CL_MEM_COPY_HOST_PTR,
-                bytes, zeros.data(), NULL);
-        }
-    }
-    if (derivsY_)
-    {
-        kernel_.kernel_ = clCreateKernel(program, "calcDerivs", NULL);
-    }
-    if (!kernel_.kernel_)
-    {
-        release();
-        return CL_INVALID_KERNEL;
-    }
-
-    int argId = 0;
-    cl_int status = clSetKernelArg(kernel_.kernel_, argId++, sizeof(cl_mem), &image);
-    status |= clSetKernelArg(kernel_.kernel_, argId++, sizeof(cl_mem), &derivsX_);
-    status |= clSetKernelArg(kernel_.kernel_, argId++, sizeof(cl_mem), &derivsY_);
-    int iterationsCount = settings.imHeight() / kernel_.ndrangeLoc_[1];
-    status |= clSetKernelArg(kernel_.kernel_, argId++, sizeof(cl_int), &iterationsCount);
-    int halfPad = settings.cellSize_ / 2;
-    status |= clSetKernelArg(kernel_.kernel_, argId++, sizeof(cl_int), &halfPad);
-    return status;
-}
-
-void Derivs::release()
-{
-    kernel_.release();
-    if (derivsY_)
-    {
-        clReleaseMemObject(derivsY_);
-        derivsY_ = NULL;
-    }
-    if (derivsX_)
-    {
-        clReleaseMemObject(derivsX_);
-        derivsX_ = NULL;
-    }
-}
-
-cl_int Derivs::calculate(
-    cl_command_queue queue,
-    cl_int numWaitEvents,
-    const cl_event *waitList,
-    cl_event &event)
-{
-    return kernel_.calculate(queue, numWaitEvents, waitList, event);
-}
-
 CellHog::~CellHog()
 {
     release();
@@ -110,8 +29,7 @@ cl_int CellHog::initialize(
     const HogSettings &settings,
     cl_context context,
     cl_program program,
-    cl_mem derivsX,
-    cl_mem derivsY)
+    cl_mem image)
 {
     kernel_.dim_ = 2;
     for (int i = 0; i < 2; ++i)
@@ -140,8 +58,7 @@ cl_int CellHog::initialize(
     }
 
     int argId = 0;
-    cl_int status = clSetKernelArg(kernel_.kernel_, argId++, sizeof(cl_mem), &derivsX);
-    status |= clSetKernelArg(kernel_.kernel_, argId++, sizeof(cl_mem), &derivsY);
+    cl_int status = clSetKernelArg(kernel_.kernel_, argId++, sizeof(cl_mem), &image);
     status |= clSetKernelArg(kernel_.kernel_, argId++, sizeof(cl_mem), &descriptor_);
     int iterationsCount = settings.imHeight() / kernel_.ndrangeLoc_[1];
     status |= clSetKernelArg(kernel_.kernel_, argId++, sizeof(cl_int), &iterationsCount);
@@ -442,12 +359,7 @@ cl_int Hog::initialize(
     cl_program program,
     cl_mem image)
 {
-    cl_int status = derivs_.initialize(settings, context, program, image);
-    if (status == CL_SUCCESS)
-    {
-        status = cellHog_.initialize(settings, context, program,
-            derivs_.derivsX_, derivs_.derivsY_);
-    }
+    cl_int status = cellHog_.initialize(settings, context, program, image);
     if (status == CL_SUCCESS)
     {
         status = cellNorm_.initialize(settings, context, program, cellHog_.descriptor_);
@@ -477,7 +389,6 @@ void Hog::release()
     cellNormSumX_.release();
     cellNorm_.release();
     cellHog_.release();
-    derivs_.release();
 }
 
 cl_int Hog::calculate(
@@ -486,18 +397,8 @@ cl_int Hog::calculate(
     const cl_event *waitList,
     cl_event &event)
 {
-    cl_event derivsEvent = NULL;
-    cl_int status = derivs_.calculate(queue, numWaitEvents, waitList, derivsEvent);
     cl_event cellHogEvent = NULL;
-    if (status == CL_SUCCESS)
-    {
-        status = cellHog_.calculate(queue, 1, &derivsEvent, cellHogEvent);
-    }
-    if (derivsEvent)
-    {
-        clReleaseEvent(derivsEvent);
-        derivsEvent = NULL;
-    }
+    cl_int status = cellHog_.calculate(queue, numWaitEvents, waitList, cellHogEvent);
     cl_event cellNormEvent = NULL;
     if (status == CL_SUCCESS)
     {

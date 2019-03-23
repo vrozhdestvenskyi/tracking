@@ -20,27 +20,6 @@ struct RangedKernel
     size_t ndrangeGlob_[3] = { 0, 0, 0 };
 };
 
-class Derivs
-{
-public:
-    ~Derivs();
-    cl_int initialize(
-        const HogSettings &settings,
-        cl_context context,
-        cl_program program,
-        cl_mem image);
-    void release();
-    cl_int calculate(
-        cl_command_queue queue,
-        cl_int numWaitEvents,
-        const cl_event *waitList,
-        cl_event &event);
-
-    cl_mem derivsX_ = NULL;
-    cl_mem derivsY_ = NULL;
-    RangedKernel kernel_;
-};
-
 class CellHog
 {
 public:
@@ -49,8 +28,7 @@ public:
         const HogSettings &settings,
         cl_context context,
         cl_program program,
-        cl_mem derivsX,
-        cl_mem derivsY);
+        cl_mem image);
     void release();
     cl_int calculate(
         cl_command_queue queue,
@@ -163,7 +141,6 @@ public:
         const cl_event *waitList,
         cl_event &event);
 
-    Derivs derivs_;
     CellHog cellHog_;
     CellNorm cellNorm_;
     CellNormSumX cellNormSumX_;
