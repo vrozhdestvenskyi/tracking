@@ -128,7 +128,6 @@ cl_int CellNorm::initialize(
     status |= clSetKernelArg(kernel_.kernel_, argId++, sizeof(cl_mem), &cellNorms_);
     int iterationsCount = settings.cellCount_[1] / kernel_.ndrangeLoc_[1];
     status |= clSetKernelArg(kernel_.kernel_, argId++, sizeof(cl_int), &iterationsCount);
-    status |= clSetKernelArg(kernel_.kernel_, argId++, sizeof(cl_int), &padding_.x);
     return status;
 }
 
@@ -143,72 +142,6 @@ void CellNorm::release()
 }
 
 cl_int CellNorm::calculate(
-    cl_command_queue queue,
-    cl_int numWaitEvents,
-    const cl_event *waitList,
-    cl_event &event)
-{
-    return kernel_.calculate(queue, numWaitEvents, waitList, event);
-}
-
-CellNormSumX::~CellNormSumX()
-{
-    release();
-}
-
-cl_int CellNormSumX::initialize(
-    const HogSettings &settings,
-    const cl_int2 &padding,
-    cl_context context,
-    cl_program program,
-    cl_mem cellNorms)
-{
-    kernel_.dim_ = 2;
-    kernel_.ndrangeLoc_[0] = kernel_.ndrangeLoc_[1] = 4;
-    kernel_.ndrangeGlob_[0] = kernel_.ndrangeLoc_[0];
-    kernel_.ndrangeGlob_[1] = settings.cellCount_[1] + padding.y - 1;
-    if ((settings.cellCount_[0] + padding.x - 1) % kernel_.ndrangeLoc_[0] ||
-        kernel_.ndrangeGlob_[1] % kernel_.ndrangeLoc_[1])
-    {
-        return CL_INVALID_WORK_GROUP_SIZE;
-    }
-
-    size_t bytes = (settings.cellCount_[0] + padding.x) * (settings.cellCount_[1] + padding.y) *
-        sizeof(cl_float);
-    {
-        std::vector<float> zeros(bytes, 0.0f);
-        normSums_ = clCreateBuffer(context, CL_MEM_READ_WRITE | CL_MEM_COPY_HOST_PTR,
-            bytes, zeros.data(), NULL);
-    }
-    if (normSums_)
-    {
-        kernel_.kernel_ = clCreateKernel(program, "sumCellNormsX", NULL);
-    }
-    if (!kernel_.kernel_)
-    {
-        release();
-        return CL_INVALID_KERNEL;
-    }
-
-    int argId = 0;
-    cl_int status = clSetKernelArg(kernel_.kernel_, argId++, sizeof(cl_mem), &cellNorms);
-    status |= clSetKernelArg(kernel_.kernel_, argId++, sizeof(cl_mem), &normSums_);
-    int iterationsCount = (settings.cellCount_[0] + padding.x - 1) / kernel_.ndrangeLoc_[0];
-    status |= clSetKernelArg(kernel_.kernel_, argId++, sizeof(cl_int), &iterationsCount);
-    return status;
-}
-
-void CellNormSumX::release()
-{
-    kernel_.release();
-    if (normSums_)
-    {
-        clReleaseMemObject(normSums_);
-        normSums_ = NULL;
-    }
-}
-
-cl_int CellNormSumX::calculate(
     cl_command_queue queue,
     cl_int numWaitEvents,
     const cl_event *waitList,
@@ -366,13 +299,8 @@ cl_int Hog::initialize(
     }
     if (status == CL_SUCCESS)
     {
-        status = cellNormSumX_.initialize(settings, cellNorm_.padding_, context, program,
-            cellNorm_.cellNorms_);
-    }
-    if (status == CL_SUCCESS)
-    {
         status = invBlockNorm_.initialize(settings, cellNorm_.padding_, context, program,
-            cellNormSumX_.normSums_);
+            cellNorm_.cellNorms_);
     }
     if (status == CL_SUCCESS)
     {
@@ -386,7 +314,6 @@ void Hog::release()
 {
     blockHog_.release();
     invBlockNorm_.release();
-    cellNormSumX_.release();
     cellNorm_.release();
     cellHog_.release();
 }
@@ -409,25 +336,15 @@ cl_int Hog::calculate(
         clReleaseEvent(cellHogEvent);
         cellHogEvent = NULL;
     }
-    cl_event sumXevent = NULL;
+    cl_event blockNormEvent = NULL;
     if (status == CL_SUCCESS)
     {
-        status = cellNormSumX_.calculate(queue, 1, &cellNormEvent, sumXevent);
+        status = invBlockNorm_.calculate(queue, 1, &cellNormEvent, blockNormEvent);
     }
     if (cellNormEvent)
     {
         clReleaseEvent(cellNormEvent);
         cellNormEvent = NULL;
-    }
-    cl_event blockNormEvent = NULL;
-    if (status == CL_SUCCESS)
-    {
-        status = invBlockNorm_.calculate(queue, 1, &sumXevent, blockNormEvent);
-    }
-    if (sumXevent)
-    {
-        clReleaseEvent(sumXevent);
-        sumXevent = NULL;
     }
     if (status == CL_SUCCESS)
     {

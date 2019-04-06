@@ -22,6 +22,8 @@
 #define HOG_WG_SZ_SMALL_LIN (HOG_WG_SZ_SMALL * HOG_WG_SZ_SMALL)
 
 #define HOG_WG_SZ_SMALL_PAD (HOG_WG_SZ_SMALL + 1)
+#define HOG_WG_SZ_SMALL_PAD_LIN (HOG_WG_SZ_SMALL_PAD * HOG_WG_SZ_SMALL_PAD)
+#define HOG_CELL_NORMS_SUM_X_SZ_LIN (HOG_WG_SZ_SMALL * HOG_WG_SZ_SMALL_PAD)
 
 inline void calcDerivsInl(
     __local const float* const restrict im,
@@ -130,7 +132,6 @@ __kernel void calcCellDesc(
 
     const int2 cellIdLoc = wiId / CELL_SZ;
     const int interpCellId = mul24(mad24(cellIdLoc.y, CELL_CNT_LOC, cellIdLoc.x), (int)SENS_BINS);
-
     int derivIdsCell[4];
     float interpCellWeights[4];
     {
@@ -234,13 +235,12 @@ inline void loadCellDesc(
 __kernel void calcCellNorms(
     __global const uint* restrict cellDescGlob,
     __global float* restrict cellNormsGlob,
-    const int iterCnt,
-    const int padX)
+    const int iterCnt)
 {
     const int wiIdY = get_local_id(1);
     const int wiIdXglob = get_global_id(0);
     const int cellCntX = get_global_size(0);
-    const int normCntX = cellCntX + padX;
+    const int normCntX = cellCntX + HOG_WG_SZ_SMALL_PAD;
     const int binCntPerIter = mul24(mul24((int)HOG_WG_SZ_SMALL, cellCntX), SENS_BINS);
     const int normCntPerIter = mul24((int)HOG_WG_SZ_SMALL, normCntX);
 
@@ -259,63 +259,61 @@ __kernel void calcCellNorms(
     }
 }
 
-__kernel void sumCellNormsX(
-    __global const float* restrict cellNormsGlob,
-    __global float* restrict sumsGlob,
-    const int iterCnt)
-{
-    __local float cellNormsLoc[HOG_WG_SZ_SMALL * HOG_WG_SZ_SMALL_PAD];
-    const int wiIdX = get_local_id(0);
-    const int idLoc = mad24((int)get_local_id(1), HOG_WG_SZ_SMALL_PAD, wiIdX);
-    const int copyLoc = idLoc + (wiIdX == 0 ? HOG_WG_SZ_SMALL : 0);
-
-    {
-        const int shiftGlob = mad24((int)get_global_id(1),
-            mad24((int)HOG_WG_SZ_SMALL, iterCnt, 1), wiIdX);
-        cellNormsGlob += shiftGlob;
-        sumsGlob += shiftGlob;
-        cellNormsLoc[idLoc] = *cellNormsGlob++;
-    }
-
-    for (int iter = 0, shiftGlob = 0; iter < iterCnt; ++iter, shiftGlob += HOG_WG_SZ_SMALL)
-    {
-        barrier(CLK_LOCAL_MEM_FENCE);
-        const float right = cellNormsGlob[shiftGlob];
-        cellNormsLoc[idLoc + 1] = right;
-        barrier(CLK_LOCAL_MEM_FENCE);
-        sumsGlob[shiftGlob] = cellNormsLoc[idLoc] + right;
-        cellNormsLoc[idLoc] = cellNormsLoc[copyLoc];
-    }
-}
-
 __kernel void calcInvBlockNorms(
-    __global const float* restrict cellNormsGlob,
-    __global float* restrict invBlockNormsGlob,
+    __global const float* const restrict cellNormsGlob,
+    __global float* restrict invBlockNorms,
     const int iterCnt)
 {
-    __local float cellNormsLoc[HOG_WG_SZ_SMALL_PAD * HOG_WG_SZ_SMALL];
-    const int wiIdY = get_local_id(1);
+    __local float cellNormsLoc[HOG_WG_SZ_SMALL_PAD_LIN];
+    __local float sumsX[HOG_CELL_NORMS_SUM_X_SZ_LIN];
+    const int2 wiId = (int2)(get_local_id(0), get_local_id(1));
     const int cellCntGlobX = get_global_size(0) + 1;
-    const int idLoc = mad24(wiIdY, (int)HOG_WG_SZ_SMALL, (int)get_local_id(0));
-    const int copyLoc = idLoc + (wiIdY == 0 ? HOG_WG_SZ_SMALL_LIN : 0);
-    const int iterStep = mul24((int)HOG_WG_SZ_SMALL, cellCntGlobX);
+    const int wiIdLin = mad24(wiId.y, HOG_WG_SZ_SMALL, wiId.x);
+    const int cellsPerIter = mul24((int)HOG_WG_SZ_SMALL, cellCntGlobX);
 
+    int srcIdLoc[2];
+    int srcIdGlob[2];
     {
-        const int shiftGlob = mad24(wiIdY, cellCntGlobX, (int)get_global_id(0));
-        cellNormsGlob += shiftGlob;
-        invBlockNormsGlob += shiftGlob;
-        cellNormsLoc[idLoc] = *cellNormsGlob;
-        cellNormsGlob += cellCntGlobX;
+        const int shiftGlob = mul24((int)get_group_id(0), (int)HOG_WG_SZ_SMALL);
+        #pragma unroll 2
+        for (int i = 0; i < 2; ++i)
+        {
+            srcIdLoc[i] = mad24(i, HOG_WG_SZ_SMALL_LIN, wiIdLin);
+            srcIdLoc[i] = srcIdLoc[i] >= HOG_WG_SZ_SMALL_PAD_LIN ? srcIdLoc[0] : srcIdLoc[i];
+            const int2 loc = (int2)(
+                srcIdLoc[i] % HOG_WG_SZ_SMALL_PAD, srcIdLoc[i] / HOG_WG_SZ_SMALL_PAD);
+            srcIdGlob[i] = mad24(loc.y, cellCntGlobX, loc.x + shiftGlob);
+        }
+        invBlockNorms += mad24(wiId.y, cellCntGlobX, wiId.x + shiftGlob);
     }
 
-    for (int iter = 0, shiftGlob = 0; iter < iterCnt; ++iter, shiftGlob += iterStep)
+    int sumIdSrc[2];
+    int sumIdDst[2];
+    #pragma unroll 2
+    for (int i = 0; i < 2; ++i)
     {
+        sumIdDst[i] = mad24(i, HOG_WG_SZ_SMALL_LIN, wiIdLin);
+        sumIdDst[i] = sumIdDst[i] >= HOG_CELL_NORMS_SUM_X_SZ_LIN ? sumIdDst[0] : sumIdDst[i];
+        const int2 loc = (int2)(sumIdDst[i] % HOG_WG_SZ_SMALL, sumIdDst[i] / HOG_WG_SZ_SMALL);
+        sumIdSrc[i] = mad24(loc.y, HOG_WG_SZ_SMALL_PAD, loc.x);
+    }
+
+    for (int iter = 0; iter < iterCnt; ++iter, invBlockNorms += cellsPerIter)
+    {
+        #pragma unroll 2
+        for (int i = 0; i < 2; ++i)
+        {
+            cellNormsLoc[srcIdLoc[i]] = cellNormsGlob[srcIdGlob[i]];
+            srcIdGlob[i] += cellsPerIter;
+        }
         barrier(CLK_LOCAL_MEM_FENCE);
-        const float bottom = cellNormsGlob[shiftGlob];
-        cellNormsLoc[idLoc + HOG_WG_SZ_SMALL] = bottom;
+        #pragma unroll 2
+        for (int i = 0; i < 2; ++i)
+        {
+            sumsX[sumIdDst[i]] = cellNormsLoc[sumIdSrc[i]] + cellNormsLoc[sumIdSrc[i] + 1];
+        }
         barrier(CLK_LOCAL_MEM_FENCE);
-        invBlockNormsGlob[shiftGlob] = half_rsqrt(cellNormsLoc[idLoc] + bottom + 1e-7f);
-        cellNormsLoc[idLoc] = cellNormsLoc[copyLoc];
+        *invBlockNorms = half_rsqrt(sumsX[wiIdLin] + sumsX[wiIdLin + HOG_WG_SZ_SMALL] + 1e-7f);
     }
 }
 
@@ -326,7 +324,7 @@ __kernel void applyNormalization(
     const int iterCnt,
     const int padX)
 {
-    __local float normsLoc[HOG_WG_SZ_SMALL_PAD * HOG_WG_SZ_SMALL_PAD];
+    __local float normsLoc[HOG_WG_SZ_SMALL_PAD_LIN];
     const int2 wiId = (int2)(get_local_id(0), get_local_id(1));
     const int cellCntGlobX = get_global_size(0);
     const int normsGlobSzX = cellCntGlobX + padX;

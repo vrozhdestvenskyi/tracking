@@ -61,27 +61,6 @@ public:
     RangedKernel kernel_;
 };
 
-class CellNormSumX
-{
-public:
-    ~CellNormSumX();
-    cl_int initialize(
-        const HogSettings &settings,
-        const cl_int2 &padding,
-        cl_context context,
-        cl_program program,
-        cl_mem cellNorms);
-    void release();
-    cl_int calculate(
-        cl_command_queue queue,
-        cl_int numWaitEvents,
-        const cl_event *waitList,
-        cl_event &event);
-
-    cl_mem normSums_ = NULL;
-    RangedKernel kernel_;
-};
-
 class InvBlockNorm
 {
 public:
@@ -143,7 +122,6 @@ public:
 
     CellHog cellHog_;
     CellNorm cellNorm_;
-    CellNormSumX cellNormSumX_;
     InvBlockNorm invBlockNorm_;
     BlockHog blockHog_;
 };
