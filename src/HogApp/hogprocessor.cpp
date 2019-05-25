@@ -7,6 +7,7 @@
 
 // debug
 #include <iomanip>
+#include <labproto.h>
 
 HogProcessor::HogProcessor(QObject *parent)
     : VideoProcessor(parent)
@@ -282,6 +283,12 @@ void HogProcessor::processFrame()
 
     QImage qimage(rgbFrame_, captureSettings_.frameWidth_, captureSettings_.frameHeight_,
         captureSettings_.frameWidth_ * 3, QImage::Format_RGB888);
+    {
+        QImage lab(qimage.width(), qimage.height(), QImage::Format_RGB888);
+        int sz = qimage.width() * qimage.height();
+        rgb2lab(qimage.bits(), sz, lab.bits());
+        lab2rgb(lab.bits(), sz, qimage.bits());
+    }
     emit sendFrame(qimage.copy());
 
     const HogSettings &s = hogProto_.settings_;
