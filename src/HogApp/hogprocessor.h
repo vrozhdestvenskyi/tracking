@@ -4,6 +4,7 @@
 #include <memory>
 #include <QElapsedTimer>
 #include <hog.h>
+#include <lab.h>
 #include <videoprocessor.h>
 
 namespace cv
@@ -31,6 +32,7 @@ signals:
 protected:
     void release();
     void calculateHogOcl();
+    void testLabOcl();
     void calculateHogPiotr();
     void compareDescriptors(const float *desc) const;
     void compareDescriptorsOcl(const float *mappedDescriptor) const;
@@ -40,6 +42,8 @@ protected:
     float *hogPiotr_ = nullptr;
     HogProto hogProto_;
     cl_mem oclImage_ = NULL;
+    cl_mem oclImageRgb_ = NULL;
+    Lab rgb2lab_;
     Hog hog_;
     QElapsedTimer timer_;
     quint64 msSum_ = 0;

@@ -15,7 +15,7 @@ HogProcessor::HogProcessor(QObject *parent)
     , ocvImageGrayFloat_(new cv::Mat_<float>())
     , hogPiotr_(nullptr)
 {
-    kernelPaths_ = { "hog.cl" };
+    kernelPaths_ = { "hog.cl", "lab.cl" };
     timer_.start();
 }
 
@@ -29,6 +29,12 @@ void HogProcessor::release()
     std::cout << "Mean processing time on " << frameIndex_ << " frames is "
         << (double)msSum_ / std::max(1, frameIndex_) << "ms\n";
     hog_.release();
+    rgb2lab_.release();
+    if (oclImageRgb_)
+    {
+        clReleaseMemObject(oclImageRgb_);
+        oclImageRgb_ = NULL;
+    }
     if (oclImage_)
     {
         clReleaseMemObject(oclImage_);
@@ -68,6 +74,18 @@ void HogProcessor::setupProcessor(const VideoProcessor::CaptureSettings &setting
             emitError("Failed to initialize oclImage_");
             return;
         }
+        oclImageRgb_ = clCreateBuffer(oclContext_, CL_MEM_READ_WRITE, bytes * 3, NULL, NULL);
+        if (!oclImageRgb_)
+        {
+            emitError("Failed to initialize oclImageRgb_");
+            return;
+        }
+    }
+    if (rgb2lab_.initialize(hogSettings.imWidth(), hogSettings.imHeight(),
+            ColorConversion::rgb2lab, oclContext_, oclProgram_, oclImageRgb_))
+    {
+        emitError("Failed to initialize Lab(rgb2lab)");
+        return;
     }
     if (hog_.initialize(hogSettings, oclContext_, oclProgram_, oclImage_) != CL_SUCCESS)
     {
@@ -141,6 +159,59 @@ void HogProcessor::calculateHogOcl()
     if (status != CL_SUCCESS)
     {
         qDebug("calculateHogOcl(...) failed");
+    }
+}
+
+void HogProcessor::testLabOcl()
+{
+    timer_.restart();
+    cl_event imageWriteEvent = NULL;
+    size_t bytes = captureSettings_.frameHeight_ * captureSettings_.frameWidth_ * 3 * sizeof(uchar);
+    cl_int status = clEnqueueWriteBuffer(oclQueue_, oclImageRgb_, CL_FALSE, 0, bytes,
+        rgbFrame_, 0, NULL, &imageWriteEvent);
+    cl_event rgb2labEvent = NULL;
+    if (status == CL_SUCCESS)
+    {
+        status = rgb2lab_.calculate(oclQueue_, 1, &imageWriteEvent, rgb2labEvent);
+    }
+    if (imageWriteEvent)
+    {
+        clReleaseEvent(imageWriteEvent);
+        imageWriteEvent = NULL;
+    }
+    cl_uchar *mappedLab = NULL;
+    if (status == CL_SUCCESS)
+    {
+        mappedLab = (cl_uchar*)clEnqueueMapBuffer(oclQueue_, rgb2lab_.converted_,
+            CL_TRUE, CL_MAP_READ, 0, bytes, 1, &rgb2labEvent, NULL, &status);
+    }
+    quint64 ms = timer_.restart();
+    msSum_ += ms;
+    std::cout << frameIndex_ << ": " << ms << "ms\n";
+    if (rgb2labEvent)
+    {
+        clReleaseEvent(rgb2labEvent);
+        rgb2labEvent = NULL;
+    }
+    if (mappedLab)
+    {
+        //compareDescriptorsOcl(mappedDesc);
+    }
+    cl_event unmapEvent = NULL;
+    if (mappedLab)
+    {
+        status = clEnqueueUnmapMemObject(oclQueue_, rgb2lab_.converted_, mappedLab,
+            0, NULL, &unmapEvent);
+    }
+    if (unmapEvent)
+    {
+        clWaitForEvents(1, &unmapEvent);
+        clReleaseEvent(unmapEvent);
+        unmapEvent = NULL;
+    }
+    if (status != CL_SUCCESS)
+    {
+        qDebug("convertLabOcl(...) failed");
     }
 }
 
@@ -278,7 +349,8 @@ void HogProcessor::processFrame()
 
     calculateHogPiotr();
     hogProto_.calculate((float*)ocvImageGrayFloat_->data);
-    calculateHogOcl();
+    //calculateHogOcl();
+    testLabOcl();
     compareDescriptors(hogProto_.blockDescriptor_);
 
     QImage qimage(rgbFrame_, captureSettings_.frameWidth_, captureSettings_.frameHeight_,

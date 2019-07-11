@@ -11,12 +11,17 @@ INCLUDEPATH += $$OCL_INCLUDE_DIR
 SOURCES += \
     hogproto.cpp \
     hog.cpp \
-    labproto.cpp
+    labproto.cpp \
+    lab.cpp \
+    rangedkernel.cpp
 
 HEADERS += \
     hogproto.h \
     hog.h \
-    labproto.h
+    labproto.h \
+    lab.h \
+    rangedkernel.h
 
 DISTFILES += \
-    hog.cl
+    hog.cl \
+    lab.cl

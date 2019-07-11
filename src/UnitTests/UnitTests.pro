@@ -5,9 +5,14 @@ TEMPLATE = app
 
 include($$PWD/../tracking.pri)
 include($$PWD/../opencv.pri)
+include($$PWD/../googletest.pri)
 
-INCLUDEPATH += $$OCV_ROOT_DIR/include
-LIBS += $$addLibsOcv(core highgui imgproc features2d calib3d)
+INCLUDEPATH += \
+    $$OCV_ROOT_DIR/include \
+    $$GTEST_INCLUDE_DIR
+LIBS += \
+    $$addLibsOcv(core highgui imgproc features2d calib3d)
+    $$addLibsGtest(gtest)
 
 DEPENDENCIES = Hog
 INCLUDEPATH += $$addIncludes($$DEPENDENCIES)
@@ -15,4 +20,5 @@ LIBS += $$addLibs($$DEPENDENCIES)
 PRE_TARGETDEPS += $$addTargetDeps($$DEPENDENCIES)
 
 SOURCES += \
-    main.cpp
+    main.cpp \
+    labtest.cpp
