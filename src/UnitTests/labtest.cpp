@@ -20,7 +20,7 @@ void countMismatches(const QImage &src, const QImage &dst, const std::string &ti
         for (int c = 0; c < 3; ++c)
         {
             const int i = pix * 3 + c;
-            cnt[c] += std::abs(src.bits()[i] - dst.bits()[i]) > pixDiffThr;
+            cnt[c] += std::abs((int)src.bits()[i] - (int)dst.bits()[i]) > pixDiffThr;
         }
     }
     std::cout << title << ": ";

@@ -20,7 +20,7 @@ __kernel void rgb2lab(
         v = (float3)(dot(rgb2xyzLin[0], v), dot(rgb2xyzLin[1], v), dot(rgb2xyzLin[2], v));
         v = select(mad(v, 7.787f, 0.137931f), cbrt(v), v > 0.008856f);
         v = (float3)(
-            mad(v.s1, 295.8f, 40.8f),
+            mad(v.s1, 295.8f, -40.8f),
             mad(v.s0 - v.s1, 500.0f, 128.0f),
             mad(v.s1 - v.s2, 200.0f, 128.0f));
         vstore3(convert_uchar3_sat(v + 0.5f), idGlob, dstLab);

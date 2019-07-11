@@ -11,7 +11,7 @@ INCLUDEPATH += \
     $$OCV_ROOT_DIR/include \
     $$GTEST_INCLUDE_DIR
 LIBS += \
-    $$addLibsOcv(core highgui imgproc features2d calib3d)
+    $$addLibsOcv(core highgui imgproc features2d calib3d) \
     $$addLibsGtest(gtest)
 
 DEPENDENCIES = Hog

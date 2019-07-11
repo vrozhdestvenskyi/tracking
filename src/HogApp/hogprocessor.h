@@ -32,10 +32,11 @@ signals:
 protected:
     void release();
     void calculateHogOcl();
-    void testLabOcl();
+    void convertRgb2lab();
     void calculateHogPiotr();
     void compareDescriptors(const float *desc) const;
     void compareDescriptorsOcl(const float *mappedDescriptor) const;
+    void compareColorConversions(const cl_uchar *mappedLab) const;
 
     std::shared_ptr<cv::Mat_<uchar> > ocvImageGray_ = nullptr;
     std::shared_ptr<cv::Mat_<float> > ocvImageGrayFloat_ = nullptr;

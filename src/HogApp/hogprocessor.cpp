@@ -162,7 +162,7 @@ void HogProcessor::calculateHogOcl()
     }
 }
 
-void HogProcessor::testLabOcl()
+void HogProcessor::convertRgb2lab()
 {
     timer_.restart();
     cl_event imageWriteEvent = NULL;
@@ -200,6 +200,7 @@ void HogProcessor::testLabOcl()
     cl_event unmapEvent = NULL;
     if (mappedLab)
     {
+        compareColorConversions(mappedLab);
         status = clEnqueueUnmapMemObject(oclQueue_, rgb2lab_.converted_, mappedLab,
             0, NULL, &unmapEvent);
     }
@@ -340,6 +341,26 @@ void HogProcessor::compareDescriptorsOcl(const float *mappedDescriptor) const
         << ". mismatch ratio: " << (float)mismatchCount / (float)total << "\n";*/
 }
 
+void HogProcessor::compareColorConversions(const cl_uchar *mappedLab) const
+{
+    int sz = captureSettings_.frameHeight_ * captureSettings_.frameWidth_;
+    std::vector<uchar> gtLab(sz * 3);
+    rgb2lab(rgbFrame_, sz, gtLab.data());
+
+    int cnt[3] = { 0, 0, 0 };
+    for (int pix = 0; pix < sz; ++pix)
+    {
+        for (int c = 0; c < 3; ++c)
+        {
+            int i = pix * 3 + c;
+            cnt[c] += std::abs((int)mappedLab[i] - (int)gtLab[i]) > 3;
+        }
+    }
+    std::cout << "mismatch: [" << cnt[0] << ", " << cnt[1] << ", " << cnt[2] << "] ";
+    std::cout << "percent: [" << (float)cnt[0] / sz << ", " << (float)cnt[1] / sz
+        << ", " << (float)cnt[2] / sz << "]\n";
+}
+
 void HogProcessor::processFrame()
 {
     if (!captureFrame())
@@ -350,7 +371,7 @@ void HogProcessor::processFrame()
     calculateHogPiotr();
     hogProto_.calculate((float*)ocvImageGrayFloat_->data);
     //calculateHogOcl();
-    testLabOcl();
+    convertRgb2lab();
     compareDescriptors(hogProto_.blockDescriptor_);
 
     QImage qimage(rgbFrame_, captureSettings_.frameWidth_, captureSettings_.frameHeight_,
