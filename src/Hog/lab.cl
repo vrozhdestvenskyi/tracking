@@ -32,6 +32,24 @@ __kernel void lab2rgb(
     __global uchar* restrict dstRgb,
     const int iterCnt)
 {
-    // TODO xyzWeights may be encapsulated into xyz2rgbLin
+    const float3 xyz2rgbLin[3] = {
+        (float3)(3.080093f, -1.537200f, -0.542891f),
+        (float3)(-0.920910f, 1.875800f, 0.045186f),
+        (float3)(0.052941f, -0.204000f, 1.150893f) };
+
+    const int iterStep = mul24((int)LAB_WG_SZ, (int)get_global_size(0));
+    int idGlob = mad24(get_global_id(1), get_global_size(0), get_global_id(0));
+
+    for (int iter = 0; iter < iterCnt; ++iter, idGlob += iterStep)
+    {
+        float3 v = convert_float3(vload3(idGlob, srcLab));
+        float y = mad(v.s0, 0.003381f, 0.137931f);
+        v = (float3)(mad(v.s1, 0.002f, y - 0.256f), y, mad(v.s2, -0.005f, y + 0.64f));
+        float3 cube = v * v * v;
+        v = select(mad(v, 0.128419f, -0.017712f), cube, cube > 0.008856f);
+        v = (float3)(dot(xyz2rgbLin[0], v), dot(xyz2rgbLin[1], v), dot(xyz2rgbLin[2], v));
+        v = select(v * 12.92f, mad(half_powr(v, 0.416667f), 1.055f, -0.055f), v > 0.0031308f);
+        vstore3(convert_uchar3_sat(mad(v, 255.0f, 0.5f)), idGlob, dstRgb);
+    }
 }
 

@@ -31,9 +31,6 @@ void rgb2lab(const uchar *srcRgb, int sz, uchar *dstLab)
                 xyz[i] += rgb2xyzLin[i][j] * rgb[j];
             }
         }
-//        xyz[0] /= 95.0489f;
-//        xyz[1] /= 100.0f;
-//        xyz[2] /= 108.8840f;
         for (int i = 0; i < 3; ++i)
         {
             xyz[i] = xyz[i] > 0.008856f

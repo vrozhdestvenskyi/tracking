@@ -36,7 +36,7 @@ protected:
     void calculateHogPiotr();
     void compareDescriptors(const float *desc) const;
     void compareDescriptorsOcl(const float *mappedDescriptor) const;
-    void compareColorConversions(const cl_uchar *mappedLab) const;
+    void compareColorConversions(const cl_uchar *ours, const uchar *gt) const;
 
     std::shared_ptr<cv::Mat_<uchar> > ocvImageGray_ = nullptr;
     std::shared_ptr<cv::Mat_<float> > ocvImageGrayFloat_ = nullptr;
@@ -45,6 +45,7 @@ protected:
     cl_mem oclImage_ = NULL;
     cl_mem oclImageRgb_ = NULL;
     Lab rgb2lab_;
+    Lab lab2rgb_;
     Hog hog_;
     QElapsedTimer timer_;
     quint64 msSum_ = 0;

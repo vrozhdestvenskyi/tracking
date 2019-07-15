@@ -29,6 +29,7 @@ void HogProcessor::release()
     std::cout << "Mean processing time on " << frameIndex_ << " frames is "
         << (double)msSum_ / std::max(1, frameIndex_) << "ms\n";
     hog_.release();
+    lab2rgb_.release();
     rgb2lab_.release();
     if (oclImageRgb_)
     {
@@ -85,6 +86,12 @@ void HogProcessor::setupProcessor(const VideoProcessor::CaptureSettings &setting
             ColorConversion::rgb2lab, oclContext_, oclProgram_, oclImageRgb_))
     {
         emitError("Failed to initialize Lab(rgb2lab)");
+        return;
+    }
+    if (lab2rgb_.initialize(hogSettings.imWidth(), hogSettings.imHeight(),
+            ColorConversion::lab2rgb, oclContext_, oclProgram_, rgb2lab_.converted_))
+    {
+        emitError("Failed to initialize Lab(lab2rgb)");
         return;
     }
     if (hog_.initialize(hogSettings, oclContext_, oclProgram_, oclImage_) != CL_SUCCESS)
@@ -179,29 +186,55 @@ void HogProcessor::convertRgb2lab()
         clReleaseEvent(imageWriteEvent);
         imageWriteEvent = NULL;
     }
-    cl_uchar *mappedLab = NULL;
+    cl_event lab2rgbEvent = NULL;
     if (status == CL_SUCCESS)
     {
-        mappedLab = (cl_uchar*)clEnqueueMapBuffer(oclQueue_, rgb2lab_.converted_,
-            CL_TRUE, CL_MAP_READ, 0, bytes, 1, &rgb2labEvent, NULL, &status);
+        status = lab2rgb_.calculate(oclQueue_, 1, &rgb2labEvent, lab2rgbEvent);
     }
-    quint64 ms = timer_.restart();
-    msSum_ += ms;
-    std::cout << frameIndex_ << ": " << ms << "ms\n";
     if (rgb2labEvent)
     {
         clReleaseEvent(rgb2labEvent);
         rgb2labEvent = NULL;
     }
-    if (mappedLab)
+    cl_uchar *mappedLab = NULL;
+    if (status == CL_SUCCESS)
     {
-        //compareDescriptorsOcl(mappedDesc);
+        mappedLab = (cl_uchar*)clEnqueueMapBuffer(oclQueue_, rgb2lab_.converted_,
+            CL_TRUE, CL_MAP_READ, 0, bytes, 1, &lab2rgbEvent, NULL, &status);
     }
+    if (lab2rgbEvent)
+    {
+        clReleaseEvent(lab2rgbEvent);
+        lab2rgbEvent = NULL;
+    }
+    quint64 ms = timer_.restart();
+    msSum_ += ms;
+    std::cout << frameIndex_ << ": " << ms << "ms\n";
     cl_event unmapEvent = NULL;
     if (mappedLab)
     {
-        compareColorConversions(mappedLab);
+        int sz = captureSettings_.frameHeight_ * captureSettings_.frameWidth_;
+        std::vector<uchar> gtLab(sz * 3);
+        rgb2lab(rgbFrame_, sz, gtLab.data());
+        compareColorConversions(mappedLab, gtLab.data());
         status = clEnqueueUnmapMemObject(oclQueue_, rgb2lab_.converted_, mappedLab,
+            0, NULL, &unmapEvent);
+    }
+    cl_uchar *mappedRgb = NULL;
+    if (status == CL_SUCCESS)
+    {
+        mappedRgb = (cl_uchar*)clEnqueueMapBuffer(oclQueue_, lab2rgb_.converted_,
+            CL_TRUE, CL_MAP_READ, 0, bytes, 1, &unmapEvent, NULL, &status);
+    }
+    if (unmapEvent)
+    {
+        clReleaseEvent(unmapEvent);
+        unmapEvent = NULL;
+    }
+    if (mappedRgb)
+    {
+        compareColorConversions(mappedRgb, rgbFrame_);
+        status = clEnqueueUnmapMemObject(oclQueue_, lab2rgb_.converted_, mappedRgb,
             0, NULL, &unmapEvent);
     }
     if (unmapEvent)
@@ -212,7 +245,7 @@ void HogProcessor::convertRgb2lab()
     }
     if (status != CL_SUCCESS)
     {
-        qDebug("convertLabOcl(...) failed");
+        qDebug("color conversion failed");
     }
 }
 
@@ -341,19 +374,16 @@ void HogProcessor::compareDescriptorsOcl(const float *mappedDescriptor) const
         << ". mismatch ratio: " << (float)mismatchCount / (float)total << "\n";*/
 }
 
-void HogProcessor::compareColorConversions(const cl_uchar *mappedLab) const
+void HogProcessor::compareColorConversions(const cl_uchar *ours, const uchar *gt) const
 {
     int sz = captureSettings_.frameHeight_ * captureSettings_.frameWidth_;
-    std::vector<uchar> gtLab(sz * 3);
-    rgb2lab(rgbFrame_, sz, gtLab.data());
-
     int cnt[3] = { 0, 0, 0 };
     for (int pix = 0; pix < sz; ++pix)
     {
         for (int c = 0; c < 3; ++c)
         {
             int i = pix * 3 + c;
-            cnt[c] += std::abs((int)mappedLab[i] - (int)gtLab[i]) > 3;
+            cnt[c] += std::abs((int)ours[i] - (int)gt[i]) > 3;
         }
     }
     std::cout << "mismatch: [" << cnt[0] << ", " << cnt[1] << ", " << cnt[2] << "] ";
