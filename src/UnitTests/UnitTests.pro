@@ -14,7 +14,7 @@ LIBS += \
     $$addLibsOcv(core highgui imgproc features2d calib3d) \
     $$addLibsGtest(gtest)
 
-DEPENDENCIES = Hog
+DEPENDENCIES = ImgProc
 INCLUDEPATH += $$addIncludes($$DEPENDENCIES)
 LIBS += $$addLibs($$DEPENDENCIES)
 PRE_TARGETDEPS += $$addTargetDeps($$DEPENDENCIES)

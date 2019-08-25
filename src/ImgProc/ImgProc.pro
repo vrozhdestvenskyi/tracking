@@ -1,5 +1,5 @@
 QT -= gui
-TARGET = Hog
+TARGET = ImgProc
 TEMPLATE = lib
 CONFIG += staticlib
 

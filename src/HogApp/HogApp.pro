@@ -17,7 +17,7 @@ QMAKE_CXXFLAGS += -msse4.1 -mssse3 -msse3 -msse2 -msse
 INCLUDEPATH += $$OCV_ROOT_DIR/include
 LIBS += $$addLibsOcv(core highgui imgproc features2d calib3d)
 
-DEPENDENCIES = VideoProcessors Hog HogPiotr VideoWidgets VideoGui
+DEPENDENCIES = VideoProcessors ImgProc HogPiotr VideoWidgets VideoGui
 INCLUDEPATH += $$addIncludes($$DEPENDENCIES)
 LIBS += $$addLibs($$DEPENDENCIES)
 PRE_TARGETDEPS += $$addTargetDeps($$DEPENDENCIES)
@@ -34,4 +34,4 @@ HEADERS += \
 FORMS += \
     hogmainwin.ui
 
-copyFilesToDestDir($${SRC_DIR}/Hog/*.cl)
+copyFilesToDestDir($${SRC_DIR}/ImgProc/*.cl)

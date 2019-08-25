@@ -5,14 +5,14 @@ include($$PWD/../../src/tracking.pri)
 
 SUBDIRS += \
     HogApp \
-    Hog \
+    ImgProc \
     HogPiotr \
     VideoProcessors \
     VideoWidgets \
     VideoGui
 
 HogApp.subdir = $$SRC_DIR/HogApp
-Hog.subdir = $$SRC_DIR/Hog
+ImgProc.subdir = $$SRC_DIR/ImgProc
 HogPiotr.subdir = $$SRC_DIR/HogPiotr
 VideoProcessors.subdir = $$SRC_DIR/VideoProcessors
 VideoWidgets.subdir = $$SRC_DIR/VideoWidgets
@@ -22,7 +22,7 @@ VideoGui.depends = \
     VideoProcessors
 
 HogApp.depends = \
-    Hog \
+    ImgProc \
     HogPiotr \
     VideoGui \
     VideoWidgets
