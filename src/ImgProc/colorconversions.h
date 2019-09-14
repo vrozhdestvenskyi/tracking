@@ -1,5 +1,5 @@
-#ifndef LAB_H
-#define LAB_H
+#ifndef COLORCONVERSIONS_H
+#define COLORCONVERSIONS_H
 
 #include <rangedkernel.h>
 
@@ -30,4 +30,4 @@ struct Lab
     RangedKernel kernel_;
 };
 
-#endif // LAB_H
+#endif // COLORCONVERSIONS_H

@@ -26,7 +26,7 @@ VideoProcessor::~VideoProcessor()
     release();
 }
 
-bool VideoProcessor::setupProcessor(const CaptureSettings &settings)
+bool VideoProcessor::setupProcessor(const VideoProcessor::CaptureSettings &settings)
 {
     release();
     if (OclProcessor::initialize() != CL_SUCCESS)
@@ -67,7 +67,7 @@ bool VideoProcessor::processFrame()
     return true;
 }
 
-void VideoProcessor::setVideoCaptureState(CaptureState state)
+void VideoProcessor::setVideoCaptureState(VideoProcessor::CaptureState state)
 {
     switch (state)
     {

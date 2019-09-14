@@ -4,7 +4,7 @@
 #include <memory>
 #include <QElapsedTimer>
 #include <hog.h>
-#include <lab.h>
+#include <colorconversions.h>
 #include <videoprocessor.h>
 
 namespace cv

@@ -1,4 +1,4 @@
-#include <labproto.h>
+#include <colorconversionsproto.h>
 #include <cmath>
 
 inline uchar clamp8bit(const float v)

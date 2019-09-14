@@ -1,4 +1,4 @@
-#include <lab.h>
+#include <colorconversions.h>
 #include <string>
 
 Lab::~Lab()

@@ -7,7 +7,7 @@
 
 // debug
 #include <iomanip>
-#include <labproto.h>
+#include <colorconversionsproto.h>
 
 HogProcessor::HogProcessor(QObject *parent)
     : VideoProcessor(parent)
@@ -15,7 +15,7 @@ HogProcessor::HogProcessor(QObject *parent)
     , ocvImageGrayFloat_(new cv::Mat_<float>())
     , hogPiotr_(nullptr)
 {
-    kernelPaths_ = { "hog.cl", "lab.cl" };
+    kernelPaths_ = { "hog.cl", "colorconversions.cl" };
     timer_.start();
 }
 

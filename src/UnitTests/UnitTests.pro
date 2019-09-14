@@ -23,8 +23,8 @@ LIBS += $$addLibs($$DEPENDENCIES)
 PRE_TARGETDEPS += $$addTargetDeps($$DEPENDENCIES)
 
 SOURCES += \
-    main.cpp \
-    labtest.cpp
+    colorconversionstest.cpp \
+    main.cpp
 
 HEADERS += \
     testhelpers.h

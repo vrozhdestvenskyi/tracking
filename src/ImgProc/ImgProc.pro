@@ -9,19 +9,19 @@ include($$PWD/../opencl.pri)
 INCLUDEPATH += $$OCL_INCLUDE_DIR
 
 SOURCES += \
+    colorconversions.cpp \
+    colorconversionsproto.cpp \
     hogproto.cpp \
     hog.cpp \
-    labproto.cpp \
-    lab.cpp \
     rangedkernel.cpp
 
 HEADERS += \
+    colorconversions.h \
+    colorconversionsproto.h \
     hogproto.h \
     hog.h \
-    labproto.h \
-    lab.h \
     rangedkernel.h
 
 DISTFILES += \
-    hog.cl \
-    lab.cl
+    colorconversions.cl \
+    hog.cl

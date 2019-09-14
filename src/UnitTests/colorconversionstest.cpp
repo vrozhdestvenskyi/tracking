@@ -1,24 +1,21 @@
-#ifndef LABTEST_CPP
-#define LABTEST_CPP
-
 #include <iostream>
 #include <QImage>
 #include <opencv2/opencv.hpp>
 #include <gtest/gtest.h>
-#include <labproto.h>
-#include <lab.h>
+#include <colorconversionsproto.h>
+#include <colorconversions.h>
 #include <oclprocessor.h>
 #include <testhelpers.h>
 
-class LabTestProcessor : public OclProcessor
+class TestProcessor : public OclProcessor
 {
 public:
-    LabTestProcessor()
+    TestProcessor()
     {
-        kernelPaths_ = { "lab.cl" };
+        kernelPaths_ = { "colorconversions.cl" };
     }
 
-    ~LabTestProcessor()
+    ~TestProcessor()
     {
         release();
     }
@@ -165,7 +162,7 @@ void verifyEquality(const uchar *src, const uchar *dst, int width, int height)
     std::cout << "\n";
 }
 
-TEST(LabTest, ProtoAgainstOpenCV)
+TEST(ColorConversionsTest, ProtoAgainstOpenCV)
 {
     const QImage srcRgb = loadTestImage();
     const int sz = srcRgb.width() * srcRgb.height();
@@ -183,10 +180,10 @@ TEST(LabTest, ProtoAgainstOpenCV)
     verifyEquality(oursRgb.bits(), srcRgb.bits(), srcRgb.width(), srcRgb.height());
 }
 
-TEST(LabTest, Ocl)
+TEST(ColorConversionsTest, OclAgainstProto)
 {
     TestImageSettings s;
-    LabTestProcessor p;
+    TestProcessor p;
     ASSERT_TRUE(p.setup(s.width_, s.height_));
 
     QImage srcRgb = loadTestImage();
@@ -201,4 +198,3 @@ TEST(LabTest, Ocl)
     verifyEquality(oursRgb.bits(), srcRgb.bits(), srcRgb.width(), srcRgb.height());
 }
 
-#endif // LABTEST_CPP
