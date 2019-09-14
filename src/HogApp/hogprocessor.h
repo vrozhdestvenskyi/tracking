@@ -22,8 +22,8 @@ public:
     ~HogProcessor() override;
 
 public slots:
-    void processFrame() override;
-    void setupProcessor(const VideoProcessor::CaptureSettings &settings) override;
+    bool processFrame() override;
+    bool setupProcessor(const VideoProcessor::CaptureSettings &settings) override;
 
 signals:
     void sendHog(const QVector<float> &hog);

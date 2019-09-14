@@ -26,21 +26,21 @@ VideoProcessor::~VideoProcessor()
     release();
 }
 
-void VideoProcessor::setupProcessor(const VideoProcessor::CaptureSettings &settings)
+bool VideoProcessor::setupProcessor(const CaptureSettings &settings)
 {
     release();
     if (OclProcessor::initialize() != CL_SUCCESS)
     {
         setVideoCaptureState(CaptureState::NotInitialized);
         emit sendError("OclProcessor::initialize() was failed");
-        return;
+        return false;
     }
     captureSettings_ = settings;
     if (settings.frameWidth_ <= 0 || settings.frameHeight_ <= 0)
     {
         setVideoCaptureState(CaptureState::NotInitialized);
         emit sendError("VideoProcessor::setupProcessor() received invalid frame size");
-        return;
+        return false;
     }
     int dataLength = settings.frameWidth_ * settings.frameHeight_ * 3 * sizeof(uchar);
     rgbFrame_ = new uchar [dataLength];
@@ -50,21 +50,24 @@ void VideoProcessor::setupProcessor(const VideoProcessor::CaptureSettings &setti
     QImage qimage(rgbFrame_, settings.frameWidth_, settings.frameHeight_,
         settings.frameWidth_ * 3, QImage::Format_RGB888);
     emit sendFrame(qimage.copy());
+    return true;
 }
 
-void VideoProcessor::processFrame()
+bool VideoProcessor::processFrame()
 {
     qDebug("VideoProcessor::processFrame()");
     if (!captureFrame())
     {
         qDebug("Failed to capture %d-th frame", frameIndex_);
+        return false;
     }
     QImage qimage(rgbFrame_, captureSettings_.frameWidth_, captureSettings_.frameHeight_,
         captureSettings_.frameWidth_ * 3, QImage::Format_RGB888);
     emit sendFrame(qimage.copy());
+    return true;
 }
 
-void VideoProcessor::setVideoCaptureState(VideoProcessor::CaptureState state)
+void VideoProcessor::setVideoCaptureState(CaptureState state)
 {
     switch (state)
     {
@@ -107,8 +110,7 @@ bool VideoProcessor::captureFrameFromDir()
     std::string frameNumber = std::to_string(settings.firstFrame_ + frameIndex_++);
     std::string leadingZeros(settings.digitCount_ - (int)frameNumber.length(), '0');
     std::string framePath = settings.directory_ + leadingZeros + frameNumber + settings.extension_;
-    QImage qimage = std::move(
-        QImage(QString(framePath.c_str())).convertToFormat(QImage::Format_RGB888));
+    QImage qimage = QImage(QString(framePath.c_str())).convertToFormat(QImage::Format_RGB888);
     if (qimage.width() != captureSettings_.frameWidth_ ||
         qimage.height() != captureSettings_.frameHeight_ ||
         qimage.bytesPerLine() != captureSettings_.frameWidth_ * 3 ||

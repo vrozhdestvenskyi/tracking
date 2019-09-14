@@ -1,73 +1,204 @@
+#ifndef LABTEST_CPP
+#define LABTEST_CPP
+
 #include <iostream>
 #include <QImage>
 #include <opencv2/opencv.hpp>
 #include <gtest/gtest.h>
 #include <labproto.h>
+#include <lab.h>
+#include <oclprocessor.h>
+#include <testhelpers.h>
 
-void countMismatches(const QImage &src, const QImage &dst, const std::string &title)
+class LabTestProcessor : public OclProcessor
 {
-    ASSERT_EQ(src.width(), dst.width());
-    ASSERT_EQ(src.height(), dst.height());
-    ASSERT_EQ(src.format(), dst.format());
-    ASSERT_EQ(src.format(), QImage::Format_RGB888);
+public:
+    LabTestProcessor()
+    {
+        kernelPaths_ = { "lab.cl" };
+    }
 
+    ~LabTestProcessor()
+    {
+        release();
+    }
+
+    bool setup(int width, int height)
+    {
+        release();
+        if (OclProcessor::initialize() != CL_SUCCESS)
+        {
+            return false;
+        }
+        width_ = width;
+        height_ = height;
+        oclImage_ = clCreateBuffer(oclContext_, CL_MEM_READ_ONLY, imSizeInBytes(), NULL, NULL);
+        if (!oclImage_)
+        {
+            return false;
+        }
+        if (rgb2lab_.initialize(width, height, ColorConversion::rgb2lab,
+                oclContext_, oclProgram_, oclImage_))
+        {
+            return false;
+        }
+        if (lab2rgb_.initialize(width, height, ColorConversion::lab2rgb,
+                oclContext_, oclProgram_, rgb2lab_.converted_))
+        {
+            return false;
+        }
+        return true;
+    }
+
+    bool processFrame(const uchar *srcRgb, uchar *dstLab, uchar *dstRgb)
+    {
+        cl_event imageWriteEvent = NULL;
+        cl_int status = clEnqueueWriteBuffer(oclQueue_, oclImage_, CL_FALSE, 0,
+            imSizeInBytes(), srcRgb, 0, NULL, &imageWriteEvent);
+        cl_event rgb2labEvent = NULL;
+        if (status == CL_SUCCESS)
+        {
+            status = rgb2lab_.calculate(oclQueue_, 1, &imageWriteEvent, rgb2labEvent);
+        }
+        if (imageWriteEvent)
+        {
+            clReleaseEvent(imageWriteEvent);
+            imageWriteEvent = NULL;
+        }
+        cl_event lab2rgbEvent = NULL;
+        if (status == CL_SUCCESS)
+        {
+            status = lab2rgb_.calculate(oclQueue_, 1, &rgb2labEvent, lab2rgbEvent);
+        }
+        if (rgb2labEvent)
+        {
+            clReleaseEvent(rgb2labEvent);
+            rgb2labEvent = NULL;
+        }
+        cl_uchar *mappedLab = NULL;
+        if (status == CL_SUCCESS)
+        {
+            mappedLab = (cl_uchar*)clEnqueueMapBuffer(oclQueue_, rgb2lab_.converted_, CL_TRUE,
+                CL_MAP_READ, 0, imSizeInBytes(), 1, &lab2rgbEvent, NULL, &status);
+        }
+        if (lab2rgbEvent)
+        {
+            clReleaseEvent(lab2rgbEvent);
+            lab2rgbEvent = NULL;
+        }
+        cl_event unmapEvent = NULL;
+        if (mappedLab)
+        {
+            std::copy(mappedLab, mappedLab + imSizeInBytes(), dstLab);
+            status = clEnqueueUnmapMemObject(oclQueue_, rgb2lab_.converted_, mappedLab,
+                0, NULL, &unmapEvent);
+        }
+        cl_uchar *mappedRgb = NULL;
+        if (status == CL_SUCCESS)
+        {
+            mappedRgb = (cl_uchar*)clEnqueueMapBuffer(oclQueue_, lab2rgb_.converted_, CL_TRUE,
+                CL_MAP_READ, 0, imSizeInBytes(), 1, &unmapEvent, NULL, &status);
+        }
+        if (unmapEvent)
+        {
+            clReleaseEvent(unmapEvent);
+            unmapEvent = NULL;
+        }
+        if (mappedRgb)
+        {
+            std::copy(mappedRgb, mappedRgb + imSizeInBytes(), dstRgb);
+            status = clEnqueueUnmapMemObject(oclQueue_, lab2rgb_.converted_, mappedRgb,
+                0, NULL, &unmapEvent);
+        }
+        if (unmapEvent)
+        {
+            clWaitForEvents(1, &unmapEvent);
+            clReleaseEvent(unmapEvent);
+            unmapEvent = NULL;
+        }
+        return status == CL_SUCCESS;
+    }
+
+protected:
+    void release()
+    {
+        lab2rgb_.release();
+        rgb2lab_.release();
+        if (oclImage_)
+        {
+            clReleaseMemObject(oclImage_);
+            oclImage_ = NULL;
+        }
+    }
+
+    int imSizeInBytes() const
+    {
+        return width_ * height_ * 3 * sizeof(uchar);
+    }
+
+    int width_ = 0;
+    int height_ = 0;
+    cl_mem oclImage_ = NULL;
+    Lab rgb2lab_;
+    Lab lab2rgb_;
+};
+
+void verifyEquality(const uchar *src, const uchar *dst, int width, int height)
+{
     const int pixDiffThr = 3;
-    const float mismatchRatioThr = 1e-3f;
-    const int sz = src.width() * src.height();
+    const float mismatchRatioThr = 1e-4f;
+    const int sz = width * height;
     int cnt[3] = { 0, 0, 0 };
     for (int pix = 0; pix < sz; ++pix)
     {
         for (int c = 0; c < 3; ++c)
         {
             const int i = pix * 3 + c;
-            cnt[c] += std::abs((int)src.bits()[i] - (int)dst.bits()[i]) > pixDiffThr;
+            cnt[c] += std::abs((int)src[i] - (int)dst[i]) > pixDiffThr;
         }
     }
-    std::cout << title << ": ";
-    std::cout << "mismatched [" << cnt[0] << ", " << cnt[1] << ", " << cnt[2] << "] values ";
-    std::cout << "(";
     for (int c = 0; c < 3; ++c)
     {
-        std::cout << (cnt[c] * 100.0f / sz) << "%" << (c + 1 < 3 ? ", " : "");
+        std::cout << cnt[c] << "(" << (float)cnt[c] / sz << ") ";
+        ASSERT_LT((float)cnt[c] / sz, mismatchRatioThr);
     }
-    std::cout << ") from " << sz << "\n";
-    for (int c = 0; c < 3; ++c)
-    {
-        ASSERT_LT(cnt[c] / sz, mismatchRatioThr);
-    }
+    std::cout << "\n";
 }
 
-TEST(LabTest, realData)
+TEST(LabTest, ProtoAgainstOpenCV)
 {
-    const QString path("C:/tracking/data/fernando/00000001.jpg");
-    std::cout << std::string(path.toLocal8Bit()) << "\n";
+    const QImage srcRgb = loadTestImage();
+    const int sz = srcRgb.width() * srcRgb.height();
 
-    const QImage im(QImage(path).convertToFormat(QImage::Format_RGB888));
-    const int sz = im.width() * im.height();
+    const cv::Mat ocvRgb(srcRgb.height(), srcRgb.width(), CV_8UC3, (void*)srcRgb.bits());
+    cv::Mat ocvLab(srcRgb.height(), srcRgb.width(), CV_8UC3);
+    cv::cvtColor(ocvRgb, ocvLab, CV_RGB2Lab);
 
-    QImage gtLab(im.width(), im.height(), QImage::Format_RGB888);
-    QImage gtRgb(im.width(), im.height(), QImage::Format_RGB888);
-    {
-        cv::Mat ocvIm(im.height(), im.width(), CV_8UC3, (void*)im.bits());
-        cv::Mat ocvLab(im.height(), im.width(), CV_8UC3);
-        cv::cvtColor(ocvIm, ocvLab, CV_RGB2Lab);
-        std::cout << ocvLab.type() << " " << CV_8UC3 << "\n";
-        int bytes = sz * 3 * sizeof(uchar);
-        std::copy(ocvLab.data, ocvLab.data + bytes, gtLab.bits());
-        cv::Mat ocvRgb(im.height(), im.width(), CV_8UC3);
-        cv::cvtColor(ocvLab, ocvRgb, CV_Lab2RGB);
-        std::copy(ocvRgb.data, ocvRgb.data + bytes, gtRgb.bits());
-//        std::copy(ocvIm.data, ocvIm.data + sz * 3 * sizeof(uchar), gtgb.bits());
-    }
+    QImage oursLab(srcRgb.width(), srcRgb.height(), srcRgb.format());
+    QImage oursRgb(srcRgb.width(), srcRgb.height(), srcRgb.format());
+    rgb2lab(srcRgb.bits(), sz, oursLab.bits());
+    lab2rgb(oursLab.bits(), sz, oursRgb.bits());
 
-    QImage lab(im.width(), im.height(), QImage::Format_RGB888);
-    QImage rgb(im.width(), im.height(), QImage::Format_RGB888);
-    rgb2lab(im.bits(), sz, lab.bits());
-    lab2rgb(lab.bits(), sz, rgb.bits());
-
-    countMismatches(lab, gtLab, "RGB-LAB(ours-ocv)");
-    countMismatches(rgb, gtRgb, "RGB-LAB-RGB(ours-ocv)");
-    countMismatches(rgb, im, "RGB-LAB-RGB(ours-raw)");
-    countMismatches(im, gtRgb, "RGB-LAB-RGB(ocv-raw)");
+    verifyEquality(oursLab.bits(), ocvLab.data, srcRgb.width(), srcRgb.height());
+    verifyEquality(oursRgb.bits(), srcRgb.bits(), srcRgb.width(), srcRgb.height());
 }
 
+TEST(LabTest, Ocl)
+{
+    TestImageSettings s;
+    LabTestProcessor p;
+    ASSERT_TRUE(p.setup(s.width_, s.height_));
+
+    QImage srcRgb = loadTestImage();
+    QImage protoLab(srcRgb.width(), srcRgb.height(), srcRgb.format());
+    rgb2lab(srcRgb.bits(), srcRgb.width() * srcRgb.height(), protoLab.bits());
+
+    QImage oursLab(srcRgb.width(), srcRgb.height(), srcRgb.format());
+    QImage oursRgb(srcRgb.width(), srcRgb.height(), srcRgb.format());
+    ASSERT_TRUE(p.processFrame(srcRgb.bits(), oursLab.bits(), oursRgb.bits()));
+
+    verifyEquality(oursLab.bits(), protoLab.bits(), srcRgb.width(), srcRgb.height());
+    verifyEquality(oursRgb.bits(), srcRgb.bits(), srcRgb.width(), srcRgb.height());
+}
+
+#endif // LABTEST_CPP

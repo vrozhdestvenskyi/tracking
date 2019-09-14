@@ -49,22 +49,25 @@ void HogProcessor::release()
     }
 }
 
-void HogProcessor::setupProcessor(const VideoProcessor::CaptureSettings &settings)
+bool HogProcessor::setupProcessor(const VideoProcessor::CaptureSettings &settings)
 {
     release();
-    VideoProcessor::setupProcessor(settings);
+    if (!VideoProcessor::setupProcessor(settings))
+    {
+        return false;
+    }
 
     auto emitError = [this](const QString &msg)
     {
         setVideoCaptureState(CaptureState::NotInitialized);
         emit sendError(msg);
+        return false;
     };
 
     HogSettings hogSettings;
     if (!hogSettings.init(settings.frameWidth_, settings.frameHeight_))
     {
-        emitError("Invalid image resolution passed into HogSettings");
-        return;
+        return emitError("Invalid image resolution passed into HogSettings");
     }
     hogProto_.initialize(hogSettings);
     {
@@ -72,32 +75,27 @@ void HogProcessor::setupProcessor(const VideoProcessor::CaptureSettings &setting
         oclImage_ = clCreateBuffer(oclContext_, CL_MEM_READ_ONLY, bytes, NULL, NULL);
         if (!oclImage_)
         {
-            emitError("Failed to initialize oclImage_");
-            return;
+            return emitError("Failed to initialize oclImage_");
         }
         oclImageRgb_ = clCreateBuffer(oclContext_, CL_MEM_READ_WRITE, bytes * 3, NULL, NULL);
         if (!oclImageRgb_)
         {
-            emitError("Failed to initialize oclImageRgb_");
-            return;
+            return emitError("Failed to initialize oclImageRgb_");
         }
     }
     if (rgb2lab_.initialize(hogSettings.imWidth(), hogSettings.imHeight(),
             ColorConversion::rgb2lab, oclContext_, oclProgram_, oclImageRgb_))
     {
-        emitError("Failed to initialize Lab(rgb2lab)");
-        return;
+        return emitError("Failed to initialize Lab(rgb2lab)");
     }
     if (lab2rgb_.initialize(hogSettings.imWidth(), hogSettings.imHeight(),
             ColorConversion::lab2rgb, oclContext_, oclProgram_, rgb2lab_.converted_))
     {
-        emitError("Failed to initialize Lab(lab2rgb)");
-        return;
+        return emitError("Failed to initialize Lab(lab2rgb)");
     }
     if (hog_.initialize(hogSettings, oclContext_, oclProgram_, oclImage_) != CL_SUCCESS)
     {
-        emitError("Failed to initialize Hog");
-        return;
+        return emitError("Failed to initialize Hog");
     }
 
     int cellCount = hogSettings.cellCount_[0] * hogSettings.cellCount_[1];
@@ -111,6 +109,7 @@ void HogProcessor::setupProcessor(const VideoProcessor::CaptureSettings &setting
 //        hogSettings.sensitiveBinCount(), hogSettings.insensitiveBinCount_
     );
     msSum_ = 0;
+    return true;
 }
 
 void HogProcessor::calculateHogOcl()
@@ -391,11 +390,12 @@ void HogProcessor::compareColorConversions(const cl_uchar *ours, const uchar *gt
         << ", " << (float)cnt[2] / sz << "]\n";
 }
 
-void HogProcessor::processFrame()
+bool HogProcessor::processFrame()
 {
     if (!captureFrame())
     {
         qDebug("Failed to capture %d-th frame", frameIndex_);
+        return false;
     }
 
     calculateHogPiotr();
@@ -419,5 +419,6 @@ void HogProcessor::processFrame()
     const float *desc = hogProto_.blockDescriptor_; // hogPiotr_;
     qCopy(desc, desc + container.size(), container.begin());
     emit sendHog(container);
+    return true;
 }
 

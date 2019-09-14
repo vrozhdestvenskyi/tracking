@@ -42,13 +42,13 @@ public:
     virtual ~VideoProcessor();
 
 public slots:
-    virtual void setupProcessor(const VideoProcessor::CaptureSettings &settings);
-    virtual void processFrame();
-    void setVideoCaptureState(VideoProcessor::CaptureState state);
+    virtual bool setupProcessor(const CaptureSettings &settings);
+    virtual bool processFrame();
+    void setVideoCaptureState(CaptureState state);
 
 signals:
     void sendError(const QString &what);
-    void sendVideoCaptureState(VideoProcessor::CaptureState state);
+    void sendVideoCaptureState(CaptureState state);
     void sendFrame(const QImage &image);
 
 protected:
