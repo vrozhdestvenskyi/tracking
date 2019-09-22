@@ -1,5 +1,4 @@
 #include <iostream>
-#include <QImage>
 #include <opencv2/opencv.hpp>
 #include <gtest/gtest.h>
 #include <colorconversionsproto.h>
@@ -86,7 +85,7 @@ public:
         cl_event unmapEvent = NULL;
         if (mappedLab)
         {
-            std::copy(mappedLab, mappedLab + imSizeInBytes(), dstLab);
+            std::copy(mappedLab, mappedLab + imLen(), dstLab);
             status = clEnqueueUnmapMemObject(oclQueue_, rgb2lab_.converted_, mappedLab,
                 0, NULL, &unmapEvent);
         }
@@ -103,7 +102,7 @@ public:
         }
         if (mappedRgb)
         {
-            std::copy(mappedRgb, mappedRgb + imSizeInBytes(), dstRgb);
+            std::copy(mappedRgb, mappedRgb + imLen(), dstRgb);
             status = clEnqueueUnmapMemObject(oclQueue_, lab2rgb_.converted_, mappedRgb,
                 0, NULL, &unmapEvent);
         }
@@ -128,9 +127,14 @@ protected:
         }
     }
 
+    int imLen() const
+    {
+        return width_ * height_ * 3;
+    }
+
     int imSizeInBytes() const
     {
-        return width_ * height_ * 3 * sizeof(uchar);
+        return imLen() * sizeof(uchar);
     }
 
     int width_ = 0;
@@ -142,8 +146,6 @@ protected:
 
 void verifyEquality(const uchar *src, const uchar *dst, int width, int height)
 {
-    const int pixDiffThr = 3;
-    const float mismatchRatioThr = 1e-4f;
     const int sz = width * height;
     int cnt[3] = { 0, 0, 0 };
     for (int pix = 0; pix < sz; ++pix)
@@ -151,13 +153,13 @@ void verifyEquality(const uchar *src, const uchar *dst, int width, int height)
         for (int c = 0; c < 3; ++c)
         {
             const int i = pix * 3 + c;
-            cnt[c] += std::abs((int)src[i] - (int)dst[i]) > pixDiffThr;
+            cnt[c] += std::abs((int)src[i] - (int)dst[i]) > 3;
         }
     }
     for (int c = 0; c < 3; ++c)
     {
         std::cout << cnt[c] << "(" << (float)cnt[c] / sz << ") ";
-        ASSERT_LT((float)cnt[c] / sz, mismatchRatioThr);
+        ASSERT_LT((float)cnt[c] / sz, 1e-4f);
     }
     std::cout << "\n";
 }

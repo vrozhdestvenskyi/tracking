@@ -17,13 +17,19 @@ LIBS += \
     $$addLibsOcv(core highgui imgproc features2d calib3d) \
     $$addLibsGtest(gtest)
 
-DEPENDENCIES = ImgProc VideoProcessors
+# For Piotr's HOG implementation
+CONFIG += mmx sse sse2
+QMAKE_FLAGS += -msse4.1 -mssse3 -msse3 -msse2 -msse
+QMAKE_CXXFLAGS += -msse4.1 -mssse3 -msse3 -msse2 -msse
+
+DEPENDENCIES = ImgProc HogPiotr VideoProcessors
 INCLUDEPATH += $$addIncludes($$DEPENDENCIES)
 LIBS += $$addLibs($$DEPENDENCIES)
 PRE_TARGETDEPS += $$addTargetDeps($$DEPENDENCIES)
 
 SOURCES += \
     colorconversionstest.cpp \
+    hogtest.cpp \
     main.cpp
 
 HEADERS += \
