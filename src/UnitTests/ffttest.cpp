@@ -46,8 +46,8 @@ TEST(FftTest, protoAgainstOpenCV)
 
 TEST(FftTest, protoForwardInverse)
 {
-    const std::vector<float> src{ 12.345f, -1.0f, 42.0f, 0.0f, 0.0f, -0.05f, 10.0f, 3.14159265f };
-    const float eps = 1e-6f;
+    const std::vector<float> src{ 12.345f, -1.0f, 42.0f, 0.0f, 0.0f, -0.05f };
+    const float eps = 1e-5f;
 
     FftProto ours;
     ASSERT_TRUE(ours.init(src.size()));

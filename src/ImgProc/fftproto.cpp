@@ -29,7 +29,7 @@ bool FftProto::initRadixStages()
 {
     uint N = N_;
     nStages_ = 0U;
-    for (uint Ny : {2U})
+    for (uint Ny : {3U, 2U})
     {
         while (N % Ny == 0U)
         {
@@ -88,7 +88,7 @@ bool FftProto::init(const uint N)
 // e^{-\frac{2 \cdot \pi \cdot i \cdot k_x \cdot n_x}{N_x}}$
 bool FftProto::calcRadixStages(const bool inverse)
 {
-    float x[2][2]{ { 0.0f } };
+    float x[3][2]{ { 0.0f } };
     uint Nx = 1U;
     for (uint stageId = 0; stageId < nStages_; ++stageId)
     {
@@ -116,11 +116,31 @@ bool FftProto::calcRadixStages(const bool inverse)
                 x[ky][0] = tmp;
             }
             // Radix computation
-            for (uint i = 0; i < 2; ++i)
+            switch (Ny)
             {
-                const float v = x[0][i];
-                x[0][i] = v + x[1][i];
-                x[1][i] = v - x[1][i];
+            case 3:
+            {
+                const float SQRT3DIV2 = 0.86602540378443f * (inverse ? -1.0f : 1.0f);
+                const float v0[2]{ x[1][0] + x[2][0], x[1][1] + x[2][1] };
+                const float v1[2]{ x[1][0] - x[2][0], x[1][1] - x[2][1] };
+                x[1][0] = x[0][0] - 0.5f * v0[0] + v1[1] * SQRT3DIV2;
+                x[1][1] = x[0][1] - 0.5f * v0[1] - v1[0] * SQRT3DIV2;
+                x[2][0] = x[0][0] - 0.5f * v0[0] - v1[1] * SQRT3DIV2;
+                x[2][1] = x[0][1] - 0.5f * v0[1] + v1[0] * SQRT3DIV2;
+                x[0][0] = x[0][0] + v0[0];
+                x[0][1] = x[0][1] + v0[1];
+                break;
+            }
+            case 2:
+                for (uint i = 0; i < 2; ++i)
+                {
+                    const float v = x[0][i];
+                    x[0][i] = v + x[1][i];
+                    x[1][i] = v - x[1][i];
+                }
+                break;
+            default:
+                return false;
             }
             // Store
             for (uint ky = 0; ky < Ny; ++ky)
@@ -141,8 +161,8 @@ bool FftProto::calcForward(const float *srcReal)
     for (uint n = 0; n < N_; ++n)
     {
         const uint k = digitReversal_[n];
-        dstComplex_[2 * k] = srcReal[n];
-        dstComplex_[2 * k + 1] = 0.0f;
+        dstComplex_[2 * n] = srcReal[k];
+        dstComplex_[2 * n + 1] = 0.0f;
     }
     return calcRadixStages(false);
 }
@@ -152,8 +172,8 @@ bool FftProto::calc(const float *srcComplex, const bool inverse)
     for (uint n = 0; n < N_; ++n)
     {
         const uint k = digitReversal_[n];
-        dstComplex_[2 * k] = srcComplex[2 * n];
-        dstComplex_[2 * k + 1] = srcComplex[2 * n + 1];
+        dstComplex_[2 * n] = srcComplex[2 * k];
+        dstComplex_[2 * n + 1] = srcComplex[2 * k + 1];
     }
     if (!calcRadixStages(inverse))
     {
