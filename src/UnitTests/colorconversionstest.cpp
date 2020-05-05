@@ -6,15 +6,15 @@
 #include <oclprocessor.h>
 #include <testhelpers.h>
 
-class TestProcessor : public OclProcessor
+class ColorConversionsTestProcessor : public OclProcessor
 {
 public:
-    TestProcessor()
+    ColorConversionsTestProcessor()
     {
         kernelPaths_ = { "colorconversions.cl" };
     }
 
-    ~TestProcessor()
+    ~ColorConversionsTestProcessor()
     {
         release();
     }
@@ -184,8 +184,8 @@ TEST(ColorConversionsTest, ProtoAgainstOpenCV)
 
 TEST(ColorConversionsTest, OclAgainstProto)
 {
-    TestImageSettings s;
-    TestProcessor p;
+    const TestImageSettings s;
+    ColorConversionsTestProcessor p;
     ASSERT_TRUE(p.setup(s.width_, s.height_));
 
     QImage srcRgb = loadTestImage();

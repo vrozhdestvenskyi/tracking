@@ -29,6 +29,7 @@ PRE_TARGETDEPS += $$addTargetDeps($$DEPENDENCIES)
 
 SOURCES += \
     colorconversionstest.cpp \
+    ffttest.cpp \
     hogtest.cpp \
     main.cpp
 

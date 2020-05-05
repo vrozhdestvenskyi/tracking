@@ -9,15 +9,10 @@ include($$PWD/../opencv.pri)
 INCLUDEPATH += $$OCL_INCLUDE_DIR
 LIBS += $$OCL_LIB
 
-# For Piotr's HOG implementation
-CONFIG += mmx sse sse2
-QMAKE_FLAGS += -msse4.1 -mssse3 -msse3 -msse2 -msse
-QMAKE_CXXFLAGS += -msse4.1 -mssse3 -msse3 -msse2 -msse
-
 INCLUDEPATH += $$OCV_ROOT_DIR/include
 LIBS += $$addLibsOcv(core highgui imgproc features2d calib3d)
 
-DEPENDENCIES = VideoProcessors ImgProc HogPiotr VideoWidgets VideoGui
+DEPENDENCIES = VideoProcessors ImgProc VideoWidgets VideoGui
 INCLUDEPATH += $$addIncludes($$DEPENDENCIES)
 LIBS += $$addLibs($$DEPENDENCIES)
 PRE_TARGETDEPS += $$addTargetDeps($$DEPENDENCIES)

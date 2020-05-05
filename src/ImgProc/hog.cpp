@@ -220,8 +220,7 @@ cl_int BlockHog::initialize(
         return CL_INVALID_WORK_GROUP_SIZE;
     }
 
-    size_t bytes = settings.cellCount_[0] * settings.cellCount_[1] * settings.channelsPerBlock() *
-        sizeof(cl_float);
+    size_t bytes = settings.descLen() * sizeof(cl_float);
     descriptor_ = clCreateBuffer(context, CL_MEM_READ_WRITE, bytes, NULL, NULL);
     if (descriptor_)
     {

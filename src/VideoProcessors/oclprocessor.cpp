@@ -108,7 +108,7 @@ cl_int OclProcessor::getPlatformId(cl_platform_id &platformId) const
         {
             return status;
         }
-        if (infoLength == 12 && std::string(info.data(), info.data() + 11) == "OpenCL 1.2 ")
+        if (infoLength == 12 && std::string(info.data(), info.data() + 11) == "OpenCL 2.1 ")
         {
             qDebug("OpenCL platform version: %s", info.data());
             platformId = ids[i];

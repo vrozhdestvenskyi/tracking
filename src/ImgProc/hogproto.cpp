@@ -59,6 +59,11 @@ bool HogSettings::init(int imWidth, int imHeight)
     return true;
 }
 
+int HogSettings::descLen() const
+{
+    return cellCount_[0] * cellCount_[1] * channelsPerBlock();
+}
+
 int HogSettings::imWidth() const
 {
     return cellCount_[0] * cellSize_;

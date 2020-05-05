@@ -12,6 +12,7 @@ struct HogSettings
     static int channelsPerCell() { return insensitiveBinCount_ + sensitiveBinCount(); }
     static int channelsPerBlock() { return channelsPerCell() + 4; }
 
+    int descLen() const;
     int imWidth() const;
     int imHeight() const;
 

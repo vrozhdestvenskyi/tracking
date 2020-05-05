@@ -5,15 +5,15 @@
 #include <oclprocessor.h>
 #include <testhelpers.h>
 
-class TestProcessor : public OclProcessor
+class HogTestProcessor : public OclProcessor
 {
 public:
-    TestProcessor()
+    HogTestProcessor()
     {
         kernelPaths_ = { "hog.cl" };
     }
 
-    ~TestProcessor()
+    ~HogTestProcessor()
     {
         release();
     }
@@ -65,7 +65,7 @@ public:
         }
         if (mappedDesc)
         {
-            std::copy(mappedDesc, mappedDesc + descLen(), desc);
+            std::copy(mappedDesc, mappedDesc + sett_.descLen(), desc);
         }
         cl_event unmapEvent = NULL;
         if (mappedDesc)
@@ -88,14 +88,9 @@ protected:
         return sett_.imWidth() * sett_.imHeight() * sizeof(cl_float);
     }
 
-    int descLen() const
-    {
-        return sett_.cellCount_[0] * sett_.cellCount_[1] * sett_.channelsPerBlock();
-    }
-
     int descSzInBytes() const
     {
-        return descLen() * sizeof(cl_float);
+        return sett_.descLen() * sizeof(cl_float);
     }
 
     void release()
@@ -128,16 +123,11 @@ public:
     }
 
 protected:
-    static int descLen()
-    {
-        return sett_.cellCount_[0] * sett_.cellCount_[1] * sett_.channelsPerBlock();
-    }
-
     std::vector<float> calcPiotr() const
     {
         std::vector<cv::Mat> descPiotr = FHoG::extract(ocvImGrayFloat_, 2, sett_.cellSize_,
             sett_.insensitiveBinCount_, 1, sett_.truncation_);
-        std::vector<float> desc(descLen(), 0.0f);
+        std::vector<float> desc(sett_.descLen(), 0.0f);
         for (int c = 0; c < sett_.channelsPerBlock(); ++c)
         {
             const cv::Mat &channel = descPiotr[c];
@@ -153,15 +143,15 @@ protected:
         return desc;
     }
 
-    void compareDescriptors(const float *src, const float *dst, float thrRelativeMismatchCnt) const
+    void compareDescriptors(const float *src, const float *dst, float mismatchThrRelative) const
     {
-        int mismatch = 0;
-        for (int i = 0; i < descLen(); ++i)
+        int n = 0;
+        for (int i = 0; i < sett_.descLen(); ++i)
         {
-            mismatch =+ fabsf(src[i] - dst[i]) > fmaxf(dst[i] * 0.05f, 1e-3f);
+            n =+ fabsf(src[i] - dst[i]) > fmaxf(dst[i] * 0.05f, 1e-3f);
         }
-        ASSERT_GT(descLen() * thrRelativeMismatchCnt, mismatch);
-        std::cout << "mismatched " << mismatch << "(" << (float)mismatch / descLen() << ")\n";
+        ASSERT_GT(sett_.descLen() * mismatchThrRelative, n);
+        std::cout << "mismatched " << n << "(" << (float)n / sett_.descLen() << ")\n";
     }
 
     static HogSettings sett_;
@@ -185,9 +175,9 @@ TEST_F(HogTest, oclAgainstProto)
     HogProto proto;
     proto.initialize(sett_);
     proto.calculate((float*)ocvImGrayFloat_.data);
-    TestProcessor ocl;
+    HogTestProcessor ocl;
     ASSERT_TRUE(ocl.setup(sett_.imWidth(), sett_.imHeight()));
-    std::vector<float> oclDesc(descLen(), 0.0f);
+    std::vector<float> oclDesc(sett_.descLen(), 0.0f);
     ASSERT_TRUE(ocl.processFrame((float*)ocvImGrayFloat_.data, oclDesc.data()));
     compareDescriptors(oclDesc.data(), proto.blockDescriptor_, 1e-5f);
 }

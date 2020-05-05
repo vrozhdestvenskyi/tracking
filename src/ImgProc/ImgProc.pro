@@ -11,6 +11,7 @@ INCLUDEPATH += $$OCL_INCLUDE_DIR
 SOURCES += \
     colorconversions.cpp \
     colorconversionsproto.cpp \
+    fftproto.cpp \
     hogproto.cpp \
     hog.cpp \
     rangedkernel.cpp
@@ -18,10 +19,12 @@ SOURCES += \
 HEADERS += \
     colorconversions.h \
     colorconversionsproto.h \
+    fftproto.h \
     hogproto.h \
     hog.h \
     rangedkernel.h
 
 DISTFILES += \
     colorconversions.cl \
+    fft.cl \
     hog.cl

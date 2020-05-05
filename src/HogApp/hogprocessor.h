@@ -4,7 +4,6 @@
 #include <memory>
 #include <QElapsedTimer>
 #include <hog.h>
-#include <colorconversions.h>
 #include <videoprocessor.h>
 
 namespace cv
@@ -31,22 +30,14 @@ signals:
 
 protected:
     void release();
-    void calculateHogOcl();
-    void convertRgb2lab();
-    void calculateHogPiotr();
-    void compareDescriptors(const float *desc) const;
-    void compareDescriptorsOcl(const float *mappedDescriptor) const;
-    void compareColorConversions(const cl_uchar *ours, const uchar *gt) const;
+    void calcHog();
 
     std::shared_ptr<cv::Mat_<uchar> > ocvImageGray_ = nullptr;
     std::shared_ptr<cv::Mat_<float> > ocvImageGrayFloat_ = nullptr;
-    float *hogPiotr_ = nullptr;
-    HogProto hogProto_;
     cl_mem oclImage_ = NULL;
-    cl_mem oclImageRgb_ = NULL;
-    Lab rgb2lab_;
-    Lab lab2rgb_;
+    HogSettings hogSett_;
     Hog hog_;
+    float *desc_ = nullptr;
     QElapsedTimer timer_;
     quint64 msSum_ = 0;
 };
