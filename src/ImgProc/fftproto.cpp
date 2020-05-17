@@ -1,11 +1,6 @@
 #include <fftproto.h>
 #include <algorithm>
 
-FftProto::FftProto()
-{
-    std::fill(std::begin(stages_), std::end(stages_), 0U);
-}
-
 FftProto::~FftProto()
 {
     release();
@@ -28,12 +23,12 @@ void FftProto::release()
 bool FftProto::initRadixStages()
 {
     uint N = N_;
-    nStages_ = 0U;
+    stages_.clear();
     for (uint Ny : {8U, 7U, 6U, 5U, 4U, 3U, 2U})
     {
         while (N % Ny == 0U)
         {
-            stages_[nStages_++] = Ny;
+            stages_.push_back(Ny);
             N /= Ny;
         }
     }
@@ -46,7 +41,7 @@ void FftProto::initDigitReversal()
     {
         uint k = n;
         uint Nx = stages_[0];
-        for (uint stageId = 1; stageId < nStages_; ++stageId)
+        for (uint stageId = 1; stageId < stages_.size(); ++stageId)
         {
             const uint Ny = stages_[stageId];
             const uint Ni = Ny * Nx;
@@ -57,11 +52,24 @@ void FftProto::initDigitReversal()
     }
 }
 
-bool FftProto::init(const uint N)
+bool FftProto::init(const uint N, const std::vector<uint> *stages)
 {
     release();
     N_ = N;
-    if (!initRadixStages())
+    if (stages)
+    {
+        stages_ = *stages;
+        uint stagesProduct = 1U;
+        for (uint Ny : stages_)
+        {
+            stagesProduct *= Ny;
+        }
+        if (stagesProduct != N_)
+        {
+            return false;
+        }
+    }
+    else if (!initRadixStages())
     {
         return false;
     }
@@ -90,9 +98,8 @@ bool FftProto::calcRadixStages(const bool inverse)
 {
     float x[8][2]{ {0.0f} };
     uint Nx = 1U;
-    for (uint stageId = 0; stageId < nStages_; ++stageId)
+    for (const uint Ny : stages_)
     {
-        const uint Ny = stages_[stageId];
         const uint Ni = Nx * Ny;
         for (uint kx = 0; kx < N_ / Ny; ++kx)
         {
@@ -339,8 +346,107 @@ bool FftProto::calc(const float *srcComplex, const bool inverse)
     return true;
 }
 
-const float * FftProto::result() const
+const float* FftProto::result() const
 {
     return dstComplex_;
+}
+
+Fft2dProto::~Fft2dProto()
+{
+    release();
+}
+
+bool Fft2dProto::init(const uint width, const uint height)
+{
+    release();
+    width_ = width;
+    height_ = height;
+    if (!hor_.init(width_) || !ver_.init(height_))
+    {
+        return false;
+    }
+    dstComplex_ = new float [2 * width_ * height_];
+    std::fill(dstComplex_, dstComplex_ + 2 * width_ * height_, 0.0f);
+    transposed_ = new float [2 * width_ * height_];
+    std::fill(transposed_, transposed_ + 2 * width_ * height_, 0.0f);
+    return true;
+}
+
+void Fft2dProto::release()
+{
+    if (transposed_)
+    {
+        delete [] transposed_;
+        transposed_ = nullptr;
+    }
+    if (dstComplex_)
+    {
+        delete [] dstComplex_;
+        dstComplex_ = nullptr;
+    }
+    ver_.release();
+    hor_.release();
+}
+
+bool Fft2dProto::calcForward(const float *srcReal)
+{
+    for (uint i = 0; i < width_ * height_; ++i)
+    {
+        dstComplex_[2 * i] = srcReal[i];
+        dstComplex_[2 * i + 1] = 0.0f;
+    }
+    return calc(false);
+}
+
+bool Fft2dProto::calc(const float *srcComplex, const bool inverse)
+{
+    std::copy(srcComplex, srcComplex + 2 * width_ * height_, dstComplex_);
+    return calc(inverse);
+}
+
+const float* Fft2dProto::result() const
+{
+    return dstComplex_;
+}
+
+void transpose(
+    const float *srcComplex,
+    const uint srcWidth,
+    const uint srcHeight,
+    float *dstComplex)
+{
+    for (uint y = 0; y < srcHeight; ++y)
+    {
+        for (uint x = 0; x < srcWidth; ++x)
+        {
+            for (uint i = 0; i < 2; ++i)
+            {
+                dstComplex[2 * (y + x * srcHeight) + i] = srcComplex[2 * (x + y * srcWidth) + i];
+            }
+        }
+    }
+}
+
+bool Fft2dProto::calc(const bool inverse)
+{
+    for (uint y = 0; y < height_; ++y)
+    {
+        if (!hor_.calc(dstComplex_ + 2 * y * width_, inverse))
+        {
+            return false;
+        }
+        std::copy(hor_.result(), hor_.result() + 2 * width_, dstComplex_ + 2 * y * width_);
+    }
+    transpose(dstComplex_, width_, height_, transposed_);
+    for (uint x = 0; x < width_; ++x)
+    {
+        if (!ver_.calc(transposed_ + 2 * x * height_, inverse))
+        {
+            return false;
+        }
+        std::copy(ver_.result(), ver_.result() + 2 * height_, transposed_ + 2 * x * height_);
+    }
+    transpose(transposed_, height_, width_, dstComplex_);
+    return true;
 }
 

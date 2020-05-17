@@ -143,14 +143,14 @@ protected:
         return desc;
     }
 
-    void compareDescriptors(const float *src, const float *dst, float mismatchThrRelative) const
+    void compareDescriptors(const float *src, const float *dst) const
     {
         int n = 0;
         for (int i = 0; i < sett_.descLen(); ++i)
         {
-            n =+ fabsf(src[i] - dst[i]) > fmaxf(dst[i] * 0.05f, 1e-3f);
+            n =+ fabsf(src[i] - dst[i]) > fmaxf(dst[i] * 1e-3f, 1e-4f);
         }
-        ASSERT_GT(sett_.descLen() * mismatchThrRelative, n);
+        ASSERT_GT(sett_.descLen() * 1e-5f, n);
         std::cout << "mismatched " << n << "(" << (float)n / sett_.descLen() << ")\n";
     }
 
@@ -167,7 +167,7 @@ TEST_F(HogTest, protoAgainstPiotr)
     proto.initialize(sett_);
     proto.calculate((float*)ocvImGrayFloat_.data);
     std::vector<float> piotr = calcPiotr();
-    compareDescriptors(proto.blockDescriptor_, piotr.data(), 1e-5f);
+    compareDescriptors(proto.blockDescriptor_, piotr.data());
 }
 
 TEST_F(HogTest, oclAgainstProto)
@@ -179,6 +179,6 @@ TEST_F(HogTest, oclAgainstProto)
     ASSERT_TRUE(ocl.setup(sett_.imWidth(), sett_.imHeight()));
     std::vector<float> oclDesc(sett_.descLen(), 0.0f);
     ASSERT_TRUE(ocl.processFrame((float*)ocvImGrayFloat_.data, oclDesc.data()));
-    compareDescriptors(oclDesc.data(), proto.blockDescriptor_, 1e-5f);
+    compareDescriptors(oclDesc.data(), proto.blockDescriptor_);
 }
 
